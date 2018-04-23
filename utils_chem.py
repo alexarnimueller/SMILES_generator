@@ -93,7 +93,10 @@ def is_valid_mol(smiles, return_smiles=False):
         end_index = smiles.find('E')
         if end_index != -1:
             smiles = smiles[:end_index]
-    m = CanonSmiles(smiles.strip(), 1)
+    try:
+        m = CanonSmiles(smiles.strip(), 1)
+    except:
+        m = None
     if return_smiles:
         return m is not None, m
     else:

@@ -43,7 +43,7 @@ class SMILESmodel(object):
         self.maxlen = None
         self.validation = validation
 
-    def load_data(self, preprocess, stereochem, percent_length):
+    def load_data(self, preprocess=False, stereochem=1., percent_length=0.8):
         pickled_name = self.dataset.split(".")[0] + ".p"
         text = read_smiles_file(self.dataset, pickled_name)
         all_mols = text.split('\n')
@@ -55,7 +55,7 @@ class SMILESmodel(object):
         self.molecules = ["G" + all_mols[i].strip() + "E" for i in kept_ind]
         print("Molecules loaded...")
 
-    def tokenize_data(self, tokenize, pad_char="A"):
+    def build_tokenizer(self, tokenize='default', pad_char="A"):
         text = "".join(self.molecules) + pad_char
         self.indices_token, self.token_indices = tokenize_smiles(text, mode=tokenize)
         self.n_chars = len(self.indices_token.keys())
@@ -63,13 +63,11 @@ class SMILESmodel(object):
         json.dump(self.token_indices, open(self.checkpoint_dir + "token_indices.json", 'w'))
         print("Molecules tokenized, token saved...")
 
-    def build_model(self, preprocess=False, stereochem=1., percent_length=0.8, tokenize='default'):
-        self.load_data(preprocess, stereochem, percent_length)
-        self.tokenize_data(tokenize)
+    def build_model(self, layers=2, neurons=256, dropoutfrac=0.2):
         self.model = Sequential()
         self.model.add(BatchNormalization(input_shape=(None, self.n_chars)))
-        self.model.add(LSTM(256, unit_forget_bias=True, dropout=0.30, return_sequences=True))
-        self.model.add(LSTM(256, unit_forget_bias=True, dropout=0.50, return_sequences=True))
+        for l in range(layers):
+            self.model.add(LSTM(neurons, unit_forget_bias=True, dropout=dropoutfrac * (l+1), return_sequences=True))
         self.model.add(BatchNormalization())
         self.model.add(TimeDistributed(Dense(self.n_chars, name="dense1")))
         self.model.add(Activation('softmax'))
@@ -98,7 +96,7 @@ class SMILESmodel(object):
         print("Training model...")
         i = 0
         while i < self.num_epochs:
-            print("------------ITERATION: ", str(i))
+            print("\n------ ITERATION %i ------" % i)
             mols_train = random.sample(mols_train, len(mols_train))
             train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen - 1)
             X_train = one_hot_encode(train_tokens, self.n_chars)
@@ -119,11 +117,11 @@ class SMILESmodel(object):
                     valid_mols = self.sample_points(n_sample, temp)
                     mol_file.write("\n".join(valid_mols))
                     n_valid = len(valid_mols)
-                    print("Valid:{:02d}/{:02d}".format(n_valid, n_sample))
                     valid_sum = tf.Summary(value=[
                         tf.Summary.Value(tag="molecules_" + str(temp), simple_value=(float(n_valid) / n_sample))])
                     writer.add_summary(valid_sum, i)
-                    print("%i Unique molecules generated" % (100 * float(len(set(valid_mols))) / len(valid_mols)))
+                    print("\nValid:\t{}/{}".format(n_valid, n_sample))
+                    print("Unique:\t{}\n".format(len(set(valid_mols))))
             i += 1
 
     def sample_points(self, n_sample, temp, prime_text="G"):
