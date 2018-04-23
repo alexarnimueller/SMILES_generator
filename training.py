@@ -1,3 +1,4 @@
+import json
 import tensorflow as tf
 from model import SMILESmodel
 
@@ -32,6 +33,7 @@ def main(_):
     model.build_tokenizer(tokenize=FLAGS.tokenizer, pad_char='A')
     model.build_model(layers=FLAGS.layers, neurons=FLAGS.neurons, dropoutfrac=FLAGS.dropout)
     model.train_model()
+    json.dump(FLAGS.__dict__, open('./checkpoint/%s/flags.json' % FLAGS.run_name))  # save used flags
 
 
 if __name__ == '__main__':

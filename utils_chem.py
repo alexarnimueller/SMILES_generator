@@ -73,7 +73,7 @@ def preprocess_smiles(smiles, stereochem=1, keep_fraction=1.):
         print("%i duplicates removed" % (len(smls) - len(mols)))
     mols.sort(key=len)
     lower = int((0.5 - (keep_fraction / 2.)) * len(mols))
-    upper = int((0.5 + (keep_fraction / 2.)) * len(mols))
+    upper = int((0.5 + (keep_fraction / 2.)) * len(mols)) - 1
     print("{}% of string length considered".format(keep_fraction * 100))
     print("Keeping lengths from %i to %i" % (len(mols[lower]), len(mols[upper])))
     selected = [mols[i] for i in range(lower, upper)]

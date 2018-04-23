@@ -53,6 +53,7 @@ class SMILESmodel(object):
             self.n_mols = len(all_mols)
         kept_ind = random.sample(range(0, len(all_mols)), self.n_mols)
         self.molecules = ["G" + all_mols[i].strip() + "E" for i in kept_ind]
+        del kept_ind, all_mols, text, pickled_name
         print("Molecules loaded...")
 
     def build_tokenizer(self, tokenize='default', pad_char="A"):
@@ -61,6 +62,7 @@ class SMILESmodel(object):
         self.n_chars = len(self.indices_token.keys())
         json.dump(self.indices_token, open(self.checkpoint_dir + "indices_token.json", 'w'))
         json.dump(self.token_indices, open(self.checkpoint_dir + "token_indices.json", 'w'))
+        del text
         print("Molecules tokenized, token saved...")
 
     def build_model(self, layers=2, neurons=256, dropoutfrac=0.2):
@@ -80,6 +82,7 @@ class SMILESmodel(object):
         shuffled_mol = random.sample(self.molecules, len(self.molecules))
         print("Molecules shuffeled...")
         tokens = tokenize_molecules(shuffled_mol, self.token_indices)
+        del shuffled_mol
         print("SMILES tokenized...")
         tokens = pad_seqs(tokens, pad_char=self.token_indices["A"])
         print("SMILES padded...")
@@ -122,6 +125,7 @@ class SMILESmodel(object):
                     writer.add_summary(valid_sum, i)
                     print("\nValid:\t{}/{}".format(n_valid, n_sample))
                     print("Unique:\t{}\n".format(len(set(valid_mols))))
+                    del valid_mols
             i += 1
 
     def sample_points(self, n_sample, temp, prime_text="G"):
