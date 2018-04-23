@@ -76,7 +76,7 @@ class SMILESmodel(object):
         print("Model built...")
 
     def train_model(self):
-        train_split = int(self.validation * len(self.molecules))
+        val_split = int(self.validation * len(self.molecules))
         shuffled_mol = random.sample(self.molecules, len(self.molecules))
         print("Molecules shuffeled...")
         tokens = tokenize_molecules(shuffled_mol, self.token_indices)
@@ -84,8 +84,8 @@ class SMILESmodel(object):
         tokens = pad_seqs(tokens, pad_char=self.token_indices["A"])
         print("SMILES padded...")
         self.maxlen = len(tokens[0])
-        mols_train = tokens[:train_split]
-        mols_val = tokens[(train_split + 1):]
+        mols_val = tokens[:val_split]
+        mols_train = tokens[(val_split + 1):]
         data, targs = generate_Xy(mols_val, self.maxlen - 1)
         X_val = one_hot_encode(data, self.n_chars)
         y_val = one_hot_encode(targs, self.n_chars)

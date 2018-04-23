@@ -21,7 +21,7 @@ def read_smiles_file(dataset, pickled_name):
         with open(dataset) as f:
             for line in f:
                 if num_lines % 10000 == 0:
-                    print("read ", str(num_lines), " lines")
+                    print("read %i lines" % num_lines)
                 fields = line.split(',')
                 smiles = fields[-1].strip()
                 text += smiles + '\n'
