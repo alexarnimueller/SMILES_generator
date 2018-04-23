@@ -5,7 +5,7 @@ import tensorflow as tf
 from model import SMILESmodel
 
 flags = tf.app.flags
-flags.DEFINE_string("model_path", "checkpoint/chembl", "path (folder) of the pretrained model")
+flags.DEFINE_string("model_path", "checkpoint/chembl/", "path (folder) of the pretrained model")
 flags.DEFINE_string("dataset", "", "[REQUIRED] dataset for fine tuning")
 flags.DEFINE_integer("epoch_to_load", 5, "epoch_to_load")
 flags.DEFINE_integer("epochs_to_train", 5, "number of epochs to fine tune")
@@ -25,15 +25,14 @@ def main(_):
         print("ERROR: Please specify the dataset for fine tuning!")
 
     if len(FLAGS.run_name) == 0:
-        run = FLAGS.dataset.split(".")[0]
+        run = FLAGS.dataset.split("/")[-1].split('.')[0]
     else:
         run = FLAGS.run_name
-    checkpoint_dir = './checkpoint/' + FLAGS.model_path + "/"
 
     model = SMILESmodel(dataset=FLAGS.dataset, num_epochs=FLAGS.epochs_to_train, run_name=run,
                         validation=FLAGS.validation)
     model.load_data(preprocess=FLAGS.preprocess, stereochem=FLAGS.stereochemistry, percent_length=FLAGS.percent_length)
-    model.load_model_from_file(checkpoint_dir, FLAGS.epoch_to_load)
+    model.load_model_from_file(FLAGS.model_path, FLAGS.epoch_to_load)
     print("Pre-trained model loaded...")
 
     model.train_model()
@@ -43,8 +42,8 @@ def main(_):
     mol_file.write("\n".join(valid_mols))
     print("Valid:\t{}/{}".format(len(valid_mols), FLAGS.num_sample))
 
-    os.system("cp %s*.json ./checkpoint/%s/" % (checkpoint_dir, run))  # copy tokenizer files to fine-tuned model folder
-    json.dump(FLAGS.__dict__, open('./checkpoint/%s/flags.json' % run))  # save used flags
+    os.system("cp %s*.json ./checkpoint/%s/" % (FLAGS.model_path, run))  # copy tokenizer files to fine-tuned folder
+    json.dump(FLAGS.__dict__, open('./checkpoint/%s/flags.json' % run, 'w'))  # save used flags
 
 
 if __name__ == '__main__':
