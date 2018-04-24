@@ -385,12 +385,13 @@ def rdkit_desc(all_mols, functions):
     return desc
 
 
-def maccs_keys(mols):
+def maccs_keys(smls):
     """ Calculate MACCS keys and output them as a numpy array
 
-    :param mols: {list} list of molecules (RDKit mols)
+    :param smls: {list} list of molecules (RDKit mols)
     :return: numpy array containing row-wise MACCS keys for every molecule
     """
+    mols = [MolFromSmiles(s) for s in smls if MolFromSmiles(s)]
     fps = [MACCSkeys.GenMACCSKeys(x) for x in mols]
     np_fps = []
     for fp in fps:

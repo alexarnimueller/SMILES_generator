@@ -98,4 +98,4 @@ ENV/
 # LSTM specific
 checkpoint/
 logs/
-
+plots/
