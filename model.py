@@ -121,8 +121,11 @@ class SMILESmodel(object):
                     mol_file.write("\n".join(valid_mols))
                     n_valid = len(valid_mols)
                     valid_sum = tf.Summary(value=[
-                        tf.Summary.Value(tag="molecules_" + str(temp), simple_value=(float(n_valid) / n_sample))])
+                        tf.Summary.Value(tag="valid_molecules_" + str(temp), simple_value=(float(n_valid) / n_sample))])
+                    novel_sum = tf.Summary(value=[tf.Summary.Value(tag="new_molecules_" + str(temp),
+                                                                   simple_value=(float(len(set(valid_mols))) / n_sample))])
                     writer.add_summary(valid_sum, i)
+                    writer.add_summary(novel_sum, i)
                     print("\nValid:\t{}/{}".format(n_valid, n_sample))
                     print("Unique:\t{}\n".format(len(set(valid_mols))))
                     del valid_mols

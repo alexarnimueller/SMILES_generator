@@ -9,7 +9,7 @@ flags.DEFINE_string("model_path", "checkpoint/chembl", "model path within checkp
 flags.DEFINE_string("output_file", "generated/sampled.csv", "output file for molecules")
 flags.DEFINE_integer("epoch_to_load", 5, "epoch_to_load")
 flags.DEFINE_integer("num_sample", 1000, "number of points to sample from trained model")
-flags.DEFINE_float("temp", 0.75, "temperature to sample at")
+flags.DEFINE_float("temp", 1.0, "temperature to sample at")
 flags.DEFINE_string("frag", "G", "Fragment to grow SMILES from")
 FLAGS = flags.FLAGS
 

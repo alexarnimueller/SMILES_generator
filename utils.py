@@ -421,3 +421,15 @@ def tanimoto(vector1, vector2):
     b = np.where(vector2 == 1)[0]
     c = len(np.intersect1d(a, b))
     return float(c) / float(len(a) + len(b) - c)
+
+
+def compare_mollists(smiles, reference):
+    """ get the molecules from ``smiles`` that are not in ``reference``
+
+    :param smiles: {list} list of SMILES strings to check for known reference in ``reference``
+    :param reference: {list} reference molecules as SMILES strings to compare to ``smiles``
+    :return: {list} unique molecules from ``smiles`` as SMILES strings
+    """
+    mols = set([MolFromSmiles(s) for s in smiles if MolFromSmiles(s)])
+    refs = set([MolFromSmiles(s) for s in reference if MolFromSmiles(s)])
+    return [MolToSmiles(m, True) for m in mols if not m in refs]

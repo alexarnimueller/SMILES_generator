@@ -10,11 +10,12 @@ from model import SMILESmodel
 flags = tf.app.flags
 flags.DEFINE_string("model_path", "checkpoint/chembl/", "path (folder) of the pretrained model")
 flags.DEFINE_string("dataset", "", "[REQUIRED] dataset for fine tuning")
-flags.DEFINE_integer("epoch_to_load", 5, "epoch_to_load")
-flags.DEFINE_integer("epochs_to_train", 5, "number of epochs to fine tune")
-flags.DEFINE_integer("num_sample", 100, "number of points to sample from trained model")
-flags.DEFINE_float("temp", 0.75, "temperature to sample at")
 flags.DEFINE_string("run_name", "", "run_name for output files")
+flags.DEFINE_integer("epoch_to_load", 10, "epoch_to_load")
+flags.DEFINE_integer("epochs_to_train", 10, "number of epochs to fine tune")
+flags.DEFINE_integer("num_sample", 100, "number of points to sample from trained model")
+flags.DEFINE_float("temp", 1.0, "temperature to sample at")
+flags.DEFINE_integer("sample_after", 3, "sample after how many epochs (if 0, no sampling)")
 flags.DEFINE_boolean("preprocess", True, "whether to preprocess stereochemistry/salts etc.")
 flags.DEFINE_integer("stereochemistry", 1, "whether stereochemistry information should be included [0, 1]")
 flags.DEFINE_float("percent_length", 0.8, "percent of length to take into account")
@@ -41,7 +42,7 @@ def main(_):
     model.train_model()
 
     valid_mols = model.sample_points(FLAGS.num_sample, FLAGS.temp)
-    mol_file = open('./generated/' + run + '_finetuned.txt', 'a')
+    mol_file = open('./generated/' + run + '_finetuned.csv', 'a')
     mol_file.write("\n".join(valid_mols))
     print("Valid:\t{}/{}".format(len(valid_mols), FLAGS.num_sample))
 
