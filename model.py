@@ -6,11 +6,11 @@ import tensorflow as tf
 import numpy as np
 from keras import backend as K
 from keras.models import Sequential, load_model
-from keras.layers import LSTM, Dense, BatchNormalization, Activation, TimeDistributed, Embedding
+from keras.layers import LSTM, Dense, BatchNormalization, Activation, TimeDistributed
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint
-from utils import read_smiles_file, tokenize_molecules, pad_seqs, generate_Xy, one_hot_encode, transform_temp
-from utils_chem import tokenize_smiles, is_valid_mol, preprocess_smiles
+from utils import read_smiles_file, tokenize_molecules, pad_seqs, generate_Xy, one_hot_encode, transform_temp, \
+    tokenize_smiles, is_valid_mol, preprocess_smiles
 
 np.random.seed(42)
 random.seed(42)
@@ -69,7 +69,7 @@ class SMILESmodel(object):
         self.model = Sequential()
         self.model.add(BatchNormalization(input_shape=(None, self.n_chars)))
         for l in range(layers):
-            self.model.add(LSTM(neurons, unit_forget_bias=True, dropout=dropoutfrac * (l+1), return_sequences=True))
+            self.model.add(LSTM(neurons, unit_forget_bias=True, dropout=dropoutfrac * (l + 1), return_sequences=True))
         self.model.add(BatchNormalization())
         self.model.add(TimeDistributed(Dense(self.n_chars, name="dense1")))
         self.model.add(Activation('softmax'))
