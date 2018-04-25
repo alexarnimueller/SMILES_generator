@@ -69,9 +69,13 @@ class SMILESmodel(object):
         self.model = Sequential()
         self.model.add(BatchNormalization(input_shape=(None, self.n_chars)))
         for l in range(layers):
-            self.model.add(LSTM(neurons, unit_forget_bias=True, dropout=dropoutfrac * (l + 1), return_sequences=True))
+            self.model.add(LSTM(neurons,
+                                unit_forget_bias=True,
+                                dropout=dropoutfrac * (l + 1),
+                                return_sequences=True,
+                                name='LSTM%i' % l))
         self.model.add(BatchNormalization())
-        self.model.add(TimeDistributed(Dense(self.n_chars, name="dense1")))
+        self.model.add(TimeDistributed(Dense(self.n_chars, name="dense")))
         self.model.add(Activation('softmax'))
         optimizer = Adam(lr=self.lr)
         self.model.compile(loss='categorical_crossentropy', optimizer=optimizer)
@@ -134,14 +138,12 @@ class SMILESmodel(object):
     def sample_points(self, n_sample, temp, prime_text="G"):
         valid_mols = []
         print("\n SAMPLING POINTS \n")
-        print("----- temp:", temp)
+        print("----- temp: %.2f -----" % temp)
         for x in range(n_sample):
             smiles = self.sample(temp, prime_text)
             print(smiles[1:])
             if is_valid_mol(smiles):
                 valid_mols += [smiles[1:]]
-            if x % 100 == 0:
-                print("Sampled {} points".format(x + 1))
         return valid_mols
 
     def sample(self, temp, prime_text="G", maxlen=100):

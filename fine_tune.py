@@ -34,7 +34,7 @@ def main(_):
         run = FLAGS.run_name
 
     model = SMILESmodel(dataset=FLAGS.dataset, num_epochs=FLAGS.epochs_to_train, run_name=run,
-                        validation=FLAGS.validation)
+                        validation=FLAGS.validation, sample_after=FLAGS.sample_after)
     model.load_data(preprocess=FLAGS.preprocess, stereochem=FLAGS.stereochemistry, percent_length=FLAGS.percent_length)
     model.load_model_from_file(FLAGS.model_path, FLAGS.epoch_to_load)
     print("Pre-trained model loaded...")
