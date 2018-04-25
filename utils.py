@@ -58,7 +58,7 @@ def pad_seqs(sequences, pad_char, given_len=0):
     for seq in sequences:
         padded_seq = seq + [pad_char] * (length - len(seq))
         padded_seqs += [padded_seq]
-    return padded_seqs
+    return np.array(padded_seqs)
 
 
 def transform_temp(preds, temp):
@@ -108,7 +108,7 @@ def tokenize_molecules(smiles, token_indices):
             posit = p
             mol_tokens += [token_indices[t]]
         tokens.append(mol_tokens)
-    return tokens
+    return np.array(tokens)
 
 
 def generate_Xy(tokens, maxlen, step=1):

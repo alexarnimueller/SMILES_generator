@@ -49,15 +49,14 @@ class SMILESmodel(object):
         all_mols = text.split('\n')
         if preprocess:
             all_mols = preprocess_smiles(all_mols, stereochem, percent_length)
-        if self.n_mols == 0:
-            self.n_mols = len(all_mols)
-        kept_ind = random.sample(range(0, len(all_mols)), self.n_mols)
-        self.molecules = ["G" + all_mols[i].strip() + "E" for i in kept_ind]
-        del kept_ind, all_mols, text, pickled_name
+        self.molecules = ["G" + m.strip() + "E" for m in all_mols]
+        if not self.n_mols:
+            self.n_mols = len(self.molecules)  # if n_mols set to sample all: use all mols
+        del all_mols, text, pickled_name
         print("Molecules loaded...")
 
     def build_tokenizer(self, tokenize='default', pad_char="A"):
-        text = "".join(self.molecules) + pad_char
+        text = pad_char.join(self.molecules)
         self.indices_token, self.token_indices = tokenize_smiles(text, mode=tokenize)
         self.n_chars = len(self.indices_token.keys())
         json.dump(self.indices_token, open(self.checkpoint_dir + "indices_token.json", 'w'))
@@ -82,7 +81,6 @@ class SMILESmodel(object):
         print("Model built...")
 
     def train_model(self):
-        val_split = int(self.validation * len(self.molecules))
         shuffled_mol = random.sample(self.molecules, len(self.molecules))
         print("Molecules shuffeled...")
         tokens = tokenize_molecules(shuffled_mol, self.token_indices)
@@ -91,11 +89,6 @@ class SMILESmodel(object):
         tokens = pad_seqs(tokens, pad_char=self.token_indices["A"])
         print("SMILES padded...")
         self.maxlen = len(tokens[0])
-        mols_val = tokens[:val_split]
-        mols_train = tokens[(val_split + 1):]
-        data, targs = generate_Xy(mols_val, self.maxlen - 1)
-        X_val = one_hot_encode(data, self.n_chars)
-        y_val = one_hot_encode(targs, self.n_chars)
 
         writer = tf.summary.FileWriter('./logs/' + self.run_name, graph=sess.graph)
         mol_file = open("./generated/" + self.run_name + "_generated.csv", 'a')
@@ -104,10 +97,17 @@ class SMILESmodel(object):
         i = 0
         while i < self.num_epochs:
             print("\n------ ITERATION %i ------" % i)
-            mols_train = random.sample(mols_train, len(mols_train))
+            indices = np.random.choice(range(len(tokens)), self.n_mols, replace=False)  # choose n_mols random tokens
+            val_split = int(self.validation * len(indices))
+            mols_val, mols_train = np.split(tokens[indices], [val_split])  # split train and validation set
+            val_tokens, val_next_tokens = generate_Xy(mols_val, self.maxlen - 1)
             train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen - 1)
             X_train = one_hot_encode(train_tokens, self.n_chars)
+            X_val = one_hot_encode(val_tokens, self.n_chars)
             y_train = one_hot_encode(train_next_tokens, self.n_chars)
+            y_val = one_hot_encode(val_next_tokens, self.n_chars)
+            del val_tokens, val_next_tokens, train_tokens, train_next_tokens
+
             chkpntr = ModelCheckpoint(filepath=self.checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(i), verbose=1)
             history = self.model.fit(X_train, y_train, batch_size=self.batch_size,
                                      epochs=1, validation_data=(X_val, y_val), shuffle=False, callbacks=[chkpntr])
@@ -117,6 +117,7 @@ class SMILESmodel(object):
 
             loss_sum = tf.Summary(value=[tf.Summary.Value(tag="loss", simple_value=history.history['loss'][-1])])
             writer.add_summary(loss_sum, i)
+            del val_loss_sum, loss_sum
 
             if (i + 1) % self.sample_after == 0:
                 n_sample = 100
@@ -132,7 +133,7 @@ class SMILESmodel(object):
                     writer.add_summary(novel_sum, i)
                     print("\nValid:\t{}/{}".format(n_valid, n_sample))
                     print("Unique:\t{}\n".format(len(set(valid_mols))))
-                    del valid_mols
+                    del valid_mols, valid_sum, novel_sum
             i += 1
 
     def sample_points(self, n_sample, temp, prime_text="G"):
