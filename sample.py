@@ -23,8 +23,9 @@ def main(_):
         frag = FLAGS.frag
     valid_mols = model.sample_points(FLAGS.num_sample, FLAGS.temp, frag)
     mol_file = open(FLAGS.output_file, 'w')
-    mol_file.write("\n".join(valid_mols))
-    print("Valid:{:02d}/{:02d}".format(len(valid_mols), FLAGS.num_sample))
+    mol_file.write("\n".join(set(valid_mols)))
+    print("Valid:{}/{}".format(len(valid_mols), FLAGS.num_sample))
+    print("Unique:{}".format(len(set(valid_mols))))
 
 
 if __name__ == '__main__':

@@ -411,7 +411,7 @@ def numpy_fps(smiles, r, features=True, bits=1024):
     :param bits: {int} size of the fingerprint (e.g. 1024, 2048)
     :return: numpy array containing row-wise fingerprints for every molecule
     """
-    mols = [MolFromSmiles(s) for s in smiles]
+    mols = [MolFromSmiles(s) for s in smiles if MolFromSmiles(s)]
     fps = [AllChem.GetMorganFingerprintAsBitVect(m, r, useFeatures=features, nBits=bits) for m in mols]
     np_fps = []
     for fp in fps:
@@ -455,7 +455,7 @@ def compare_mollists(smiles, reference):
     return [m for m in mols if m not in refs]
 
 
-def get_most_similar(smiles, referencemol, n=1, r=2, features=True, bits=1024):
+def get_most_similar(smiles, referencemol, n=1, r=2, features=True, bits=1024, maccs=False):
     """ get the most similar n molecules to a reference in a list of SMILES strings using 2D fingerprints
 
     :param smiles: {list} list of molecules to compare to reference (SMILES strings)
@@ -463,11 +463,16 @@ def get_most_similar(smiles, referencemol, n=1, r=2, features=True, bits=1024):
     :param n: {int} number of most similars to retrieve
     :param r: {int} radius of the Morgan-Type fingerprint
     :param features: {bool} whether to use atom features to calculate the fingerprint (ECFP vs FCFP)
+    :param maccs: {bool} whether to use MACCS keys instead of fingerprints
     :param bits: {int} number of bits to hash the fingerprint to
     :return: top n similar SMILES in a list
     """
-    fps = numpy_fps(smiles, r=r, features=features, bits=bits)
-    fp_ref = numpy_fps([referencemol], r=r, features=features, bits=bits)
+    if maccs:
+        fps = maccs_keys(smiles)
+        fp_ref = maccs_keys([referencemol])
+    else:
+        fps = numpy_fps(smiles, r=r, features=features, bits=bits)
+        fp_ref = numpy_fps([referencemol], r=r, features=features, bits=bits)
     sims = [tanimoto(v, fp_ref[0]) for v in fps]
     inds = np.argpartition(sims, -n)[-n:][::-1]
     return np.array(smiles)[inds].tolist(), np.array(sims)[inds].tolist()
