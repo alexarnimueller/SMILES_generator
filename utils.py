@@ -7,7 +7,8 @@ import progressbar
 import re
 import numpy as np
 
-from rdkit.Chem import CanonSmiles, MolFromSmiles, MolToSmiles, Descriptors, MACCSkeys, ReplaceSidechains, ReplaceCore
+from rdkit.Chem import CanonSmiles, MolFromSmiles, MolToSmiles, Descriptors, MACCSkeys, ReplaceSidechains, ReplaceCore, \
+    AllChem
 from rdkit.DataStructs import ConvertToNumpyArray
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
@@ -142,15 +143,15 @@ def tokenize_smiles(text, mode='default'):
 
     elif mode == 'default':
         indices_token = {"0": 'H', "1": '9', "2": 'D', "3": 'r', "4": 'T', "5": 'R', "6": 'V', "7": '4',
-                              "8": 'c', "9": 'l', "10": 'b', "11": '.', "12": 'C', "13": 'Y', "14": 's', "15": 'B',
-                              "16": 'k', "17": '+', "18": 'p', "19": '2', "20": '7', "21": '8', "22": 'O',
-                              "23": '%', "24": 'o', "25": '6', "26": 'N', "27": 'A', "28": 't', "29": '$',
-                              "30": '(', "31": 'u', "32": 'Z', "33": '#', "34": 'M', "35": 'P', "36": 'G',
-                              "37": 'I', "38": '=', "39": '-', "40": 'X', "41": '@', "42": 'E', "43": '":',
-                              "44": '\\', "45": ')', "46": 'i', "47": 'K', "48": '/', "49": '{', "50": 'h',
-                              "51": 'L', "52": 'n', "53": 'U', "54": '[', "55": '0', "56": 'y', "57": 'e',
-                              "58": '3', "59": 'g', "60": 'f', "61": '}', "62": '1', "63": 'd', "64": 'W',
-                              "65": '5', "66": 'S', "67": 'F', "68": ']', "69": 'a', "70": 'm'}
+                         "8": 'c', "9": 'l', "10": 'b', "11": '.', "12": 'C', "13": 'Y', "14": 's', "15": 'B',
+                         "16": 'k', "17": '+', "18": 'p', "19": '2', "20": '7', "21": '8', "22": 'O',
+                         "23": '%', "24": 'o', "25": '6', "26": 'N', "27": 'A', "28": 't', "29": '$',
+                         "30": '(', "31": 'u', "32": 'Z', "33": '#', "34": 'M', "35": 'P', "36": 'G',
+                         "37": 'I', "38": '=', "39": '-', "40": 'X', "41": '@', "42": 'E', "43": '":',
+                         "44": '\\', "45": ')', "46": 'i', "47": 'K', "48": '/', "49": '{', "50": 'h',
+                         "51": 'L', "52": 'n', "53": 'U', "54": '[', "55": '0', "56": 'y', "57": 'e',
+                         "58": '3', "59": 'g', "60": 'f', "61": '}', "62": '1', "63": 'd', "64": 'W',
+                         "65": '5', "66": 'S', "67": 'F', "68": ']', "69": 'a', "70": 'm'}
         token_indices = {v: k for k, v in indices_token.items()}
     else:
         raise NotImplementedError
@@ -401,6 +402,25 @@ def maccs_keys(smls):
     return np.array(np_fps).reshape((len(mols), len(np_fps[-1])))
 
 
+def numpy_fps(smiles, r, features=True, bits=1024):
+    """ Calculate RDKit morgan fingerprints and output them as a numpy array
+
+    :param smiles: {list} list of molecules as SMILES strings
+    :param r: {int} radius to consider when calculating the fingerprints
+    :param features: {bool} whether to use features like in FCFP
+    :param bits: {int} size of the fingerprint (e.g. 1024, 2048)
+    :return: numpy array containing row-wise fingerprints for every molecule
+    """
+    mols = [MolFromSmiles(s) for s in smiles]
+    fps = [AllChem.GetMorganFingerprintAsBitVect(m, r, useFeatures=features, nBits=bits) for m in mols]
+    np_fps = []
+    for fp in fps:
+        arr = np.zeros((1,))
+        ConvertToNumpyArray(fp, arr)
+        np_fps.append(arr)
+    return np.array(np_fps).reshape((len(mols), bits))
+
+
 def tanimoto(vector1, vector2):
     """ function to calculate the taniomoto similarity of two binary vectors of the same length. only on-bits are
     considered. The formula used is:
@@ -430,6 +450,24 @@ def compare_mollists(smiles, reference):
     :param reference: {list} reference molecules as SMILES strings to compare to ``smiles``
     :return: {list} unique molecules from ``smiles`` as SMILES strings
     """
-    mols = set([MolFromSmiles(s) for s in smiles if MolFromSmiles(s)])
-    refs = set([MolFromSmiles(s) for s in reference if MolFromSmiles(s)])
-    return [MolToSmiles(m, True) for m in mols if not m in refs]
+    mols = set([CanonSmiles(s, 1) for s in smiles if MolFromSmiles(s)])
+    refs = set([CanonSmiles(s, 1) for s in reference if MolFromSmiles(s)])
+    return [m for m in mols if m not in refs]
+
+
+def get_most_similar(smiles, referencemol, n=1, r=2, features=True, bits=1024):
+    """ get the most similar n molecules to a reference in a list of SMILES strings using 2D fingerprints
+
+    :param smiles: {list} list of molecules to compare to reference (SMILES strings)
+    :param referencemol: {str} reference molecule as SMILES string
+    :param n: {int} number of most similars to retrieve
+    :param r: {int} radius of the Morgan-Type fingerprint
+    :param features: {bool} whether to use atom features to calculate the fingerprint (ECFP vs FCFP)
+    :param bits: {int} number of bits to hash the fingerprint to
+    :return: top n similar SMILES in a list
+    """
+    fps = numpy_fps(smiles, r=r, features=features, bits=bits)
+    fp_ref = numpy_fps([referencemol], r=r, features=features, bits=bits)
+    sims = [tanimoto(v, fp_ref[0]) for v in fps]
+    inds = np.argpartition(sims, -n)[-n:][::-1]
+    return np.array(smiles)[inds].tolist(), np.array(sims)[inds].tolist()

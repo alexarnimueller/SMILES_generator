@@ -10,7 +10,7 @@ from keras.layers import LSTM, Dense, BatchNormalization, Activation, TimeDistri
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint
 from utils import read_smiles_file, tokenize_molecules, pad_seqs, generate_Xy, one_hot_encode, transform_temp, \
-    tokenize_smiles, is_valid_mol, preprocess_smiles
+    tokenize_smiles, is_valid_mol, preprocess_smiles, compare_mollists
 
 np.random.seed(42)
 random.seed(42)
@@ -84,7 +84,6 @@ class SMILESmodel(object):
         shuffled_mol = random.sample(self.molecules, len(self.molecules))
         print("Molecules shuffeled...")
         tokens = tokenize_molecules(shuffled_mol, self.token_indices)
-        del shuffled_mol
         print("SMILES tokenized...")
         tokens = pad_seqs(tokens, pad_char=self.token_indices["A"])
         print("SMILES padded...")
@@ -97,42 +96,54 @@ class SMILESmodel(object):
         i = 0
         while i < self.num_epochs:
             print("\n------ ITERATION %i ------" % i)
-            indices = np.random.choice(range(len(tokens)), self.n_mols, replace=False)  # choose n_mols random tokens
-            val_split = int(self.validation * len(indices))
-            mols_val, mols_train = np.split(tokens[indices], [val_split])  # split train and validation set
-            val_tokens, val_next_tokens = generate_Xy(mols_val, self.maxlen - 1)
-            train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen - 1)
-            X_train = one_hot_encode(train_tokens, self.n_chars)
-            X_val = one_hot_encode(val_tokens, self.n_chars)
-            y_train = one_hot_encode(train_next_tokens, self.n_chars)
-            y_val = one_hot_encode(val_next_tokens, self.n_chars)
-            del val_tokens, val_next_tokens, train_tokens, train_next_tokens
 
+            indices = np.random.choice(range(len(tokens)), self.n_mols, replace=False)  # choose n_mols random tokens
             chkpntr = ModelCheckpoint(filepath=self.checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(i), verbose=1)
-            history = self.model.fit(X_train, y_train, batch_size=self.batch_size,
-                                     epochs=1, validation_data=(X_val, y_val), shuffle=False, callbacks=[chkpntr])
-            val_loss_sum = tf.Summary(
-                value=[tf.Summary.Value(tag="val_loss", simple_value=history.history['val_loss'][-1])])
-            writer.add_summary(val_loss_sum, i)
+
+            if self.validation:
+                val_split = int(self.validation * len(indices))
+                mols_val, mols_train = np.split(tokens[indices], [val_split])  # split train and validation set
+                val_tokens, val_next_tokens = generate_Xy(mols_val, self.maxlen - 1)
+                X_val = one_hot_encode(val_tokens, self.n_chars)
+                y_val = one_hot_encode(val_next_tokens, self.n_chars)
+                train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen - 1)
+                X_train = one_hot_encode(train_tokens, self.n_chars)
+                y_train = one_hot_encode(train_next_tokens, self.n_chars)
+                history = self.model.fit(X_train, y_train, batch_size=self.batch_size, epochs=1,
+                                         validation_data=(X_val, y_val), shuffle=False, callbacks=[chkpntr])
+                val_loss_sum = tf.Summary(
+                    value=[tf.Summary.Value(tag="val_loss", simple_value=history.history['val_loss'][-1])])
+                writer.add_summary(val_loss_sum, i)
+                del val_tokens, val_next_tokens, train_tokens, train_next_tokens
+            else:
+                mols_train = tokens[indices]
+                train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen - 1)
+                X_train = one_hot_encode(train_tokens, self.n_chars)
+                y_train = one_hot_encode(train_next_tokens, self.n_chars)
+                history = self.model.fit(X_train, y_train, batch_size=self.batch_size, epochs=1, shuffle=False,
+                                         callbacks=[chkpntr])
+                del train_tokens, train_next_tokens
 
             loss_sum = tf.Summary(value=[tf.Summary.Value(tag="loss", simple_value=history.history['loss'][-1])])
             writer.add_summary(loss_sum, i)
-            del val_loss_sum, loss_sum
 
             if (i + 1) % self.sample_after == 0:
                 n_sample = 100
                 for temp in [0.75, 1.0, 1.2]:
                     valid_mols = self.sample_points(n_sample, temp)
-                    mol_file.write("\n".join(valid_mols))
                     n_valid = len(valid_mols)
+                    novel = compare_mollists(valid_mols, np.array(shuffled_mol)[indices])
+                    mol_file.write("\n".join(set(valid_mols)))
+
                     valid_sum = tf.Summary(value=[
                         tf.Summary.Value(tag="valid_molecules_" + str(temp), simple_value=(float(n_valid) / n_sample))])
                     novel_sum = tf.Summary(value=[tf.Summary.Value(tag="new_molecules_" + str(temp),
-                                                                   simple_value=(float(len(set(valid_mols))) / n_sample))])
+                                                                   simple_value=(float(len(set(novel))) / n_sample))])
                     writer.add_summary(valid_sum, i)
                     writer.add_summary(novel_sum, i)
                     print("\nValid:\t{}/{}".format(n_valid, n_sample))
-                    print("Unique:\t{}\n".format(len(set(valid_mols))))
+                    print("Unique:\t{}".format(len(set(valid_mols))))
+                    print("Novel:\t{}\n".format(len(novel)))
                     del valid_mols, valid_sum, novel_sum
             i += 1
 
