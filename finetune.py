@@ -26,7 +26,7 @@ FLAGS = flags.FLAGS
 
 def main(_):
     if len(FLAGS.dataset) == 0:
-        print("ERROR: Please specify the dataset for fine tuning!")
+        raise ValueError("Please specify the dataset for fine tuning!")
 
     if len(FLAGS.run_name) == 0:
         run = FLAGS.dataset.split("/")[-1].split('.')[0]
@@ -37,7 +37,7 @@ def main(_):
                         validation=FLAGS.validation, sample_after=FLAGS.sample_after)
     model.load_data(preprocess=FLAGS.preprocess, stereochem=FLAGS.stereochemistry, percent_length=FLAGS.percent_length)
     model.load_model_from_file(FLAGS.model_path, FLAGS.epoch_to_load)
-    print("Pre-trained model loaded...")
+    print("Pre-trained model loaded, finetuning...")
 
     model.train_model()
 
@@ -47,7 +47,7 @@ def main(_):
     print("Valid:\t{}/{}".format(len(valid_mols), FLAGS.num_sample))
 
     os.system("cp %s*.json ./checkpoint/%s/" % (FLAGS.model_path, run))  # copy tokenizer files to fine-tuned folder
-    json.dump(FLAGS.__dict__, open('./checkpoint/%s/flags.json' % run, 'w'))  # save used flags
+    json.dump(FLAGS.__flags.items(), open('./checkpoint/%s/flags.json' % run, 'w'))  # save used flags
 
 
 if __name__ == '__main__':

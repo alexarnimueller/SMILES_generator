@@ -4,19 +4,19 @@ import json
 import random
 import tensorflow as tf
 import numpy as np
-from keras import backend as K
+from keras import backend as kb
 from keras.models import Sequential, load_model
-from keras.layers import LSTM, Dense, BatchNormalization, Activation, TimeDistributed
+from keras.layers import LSTM, Dense, GaussianDropout, AlphaDropout, BatchNormalization, TimeDistributed
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint
 from utils import read_smiles_file, tokenize_molecules, pad_seqs, generate_Xy, one_hot_encode, transform_temp, \
-    tokenize_smiles, is_valid_mol, preprocess_smiles
+    tokenize_smiles, is_valid_mol, preprocess_smiles, randomize_smiles
 
 np.random.seed(42)
 random.seed(42)
 tf.set_random_seed(42)
 sess = tf.Session()
-K.set_session(sess)
+kb.set_session(sess)
 
 
 class SMILESmodel(object):
@@ -43,17 +43,23 @@ class SMILESmodel(object):
         self.maxlen = None
         self.validation = validation
 
-    def load_data(self, preprocess=False, stereochem=1., percent_length=0.8):
+    def load_data(self, preprocess=False, stereochem=1., percent_length=0.8, augment=3):
         pickled_name = self.dataset.split(".")[0] + ".p"
         text = read_smiles_file(self.dataset, pickled_name)
         all_mols = text.split('\n')
         if preprocess:
             all_mols = preprocess_smiles(all_mols, stereochem, percent_length)
         self.molecules = ["G" + m.strip() + "E" for m in all_mols]
+        self.maxlen = max([len(m) for m in self.molecules]) - 1
         if not self.n_mols:
             self.n_mols = len(self.molecules)  # if n_mols set to sample all: use all mols
         del all_mols, text, pickled_name
-        print("Molecules loaded...")
+        print("%i molecules loaded from %s..." % (len(self.molecules), self.dataset))
+        if augment > 1:
+            augmented_mols = np.asarray([randomize_smiles(s, num=augment) for s in self.molecules]).flatten()
+            print("%i SMILES strings generated for %i molecules" % (len(augmented_mols), len(self.molecules)))
+            self.molecules = augmented_mols
+            del augmented_mols
 
     def build_tokenizer(self, tokenize='default', pad_char="A"):
         text = pad_char.join(self.molecules)
@@ -67,28 +73,21 @@ class SMILESmodel(object):
     def build_model(self, layers=2, neurons=256, dropoutfrac=0.2):
         self.model = Sequential()
         self.model.add(BatchNormalization(input_shape=(None, self.n_chars)))
+        self.model.add(AlphaDropout(0.1))
         for l in range(layers):
-            self.model.add(LSTM(neurons,
-                                unit_forget_bias=True,
-                                dropout=dropoutfrac * (l + 1),
-                                return_sequences=True,
-                                name='LSTM%i' % l))
+            self.model.add(LSTM(neurons, unit_forget_bias=True, return_sequences=True, name='LSTM%i' % l))
+            self.model.add(GaussianDropout(dropoutfrac * (l + 1)))
         self.model.add(BatchNormalization())
-        self.model.add(TimeDistributed(Dense(self.n_chars, name="dense")))
-        self.model.add(Activation('softmax'))
+        self.model.add(TimeDistributed(Dense(self.n_chars, activation='softmax', name="dense")))
         optimizer = Adam(lr=self.lr)
         self.model.compile(loss='categorical_crossentropy', optimizer=optimizer)
         print("Model built...")
 
     def train_model(self):
-        shuffled_mol = random.sample(self.molecules, len(self.molecules))
-        print("Molecules shuffeled...")
-        tokens = tokenize_molecules(shuffled_mol, self.token_indices)
-        del shuffled_mol
+        tokens = tokenize_molecules(random.sample(self.molecules, len(self.molecules)), self.token_indices)
         print("SMILES tokenized...")
         tokens = pad_seqs(tokens, pad_char=self.token_indices["A"])
         print("SMILES padded...")
-        self.maxlen = len(tokens[0])
 
         writer = tf.summary.FileWriter('./logs/' + self.run_name, graph=sess.graph)
         mol_file = open("./generated/" + self.run_name + "_generated.csv", 'a')
@@ -127,7 +126,7 @@ class SMILESmodel(object):
                     n_valid = len(valid_mols)
                     valid_sum = tf.Summary(value=[
                         tf.Summary.Value(tag="valid_molecules_" + str(temp), simple_value=(float(n_valid) / n_sample))])
-                    novel_sum = tf.Summary(value=[tf.Summary.Value(tag="new_molecules_" + str(temp),
+                    novel_sum = tf.Summary(value=[tf.Summary.Value(tag="unique_molecules_" + str(temp),
                                                                    simple_value=(float(len(set(valid_mols))) / n_sample))])
                     writer.add_summary(valid_sum, i)
                     writer.add_summary(novel_sum, i)

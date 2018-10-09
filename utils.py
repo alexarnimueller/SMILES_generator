@@ -4,11 +4,9 @@
 import os
 import pickle
 import progressbar
-import re
 import numpy as np
 
-from rdkit.Chem import CanonSmiles, MolFromSmiles, MolToSmiles, Descriptors, MACCSkeys, ReplaceSidechains, ReplaceCore
-from rdkit.DataStructs import ConvertToNumpyArray
+from rdkit.Chem import CanonSmiles, MolFromSmiles, MolToSmiles, RenumberAtoms, ReplaceSidechains, ReplaceCore
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 
@@ -142,15 +140,15 @@ def tokenize_smiles(text, mode='default'):
 
     elif mode == 'default':
         indices_token = {"0": 'H', "1": '9', "2": 'D', "3": 'r', "4": 'T', "5": 'R', "6": 'V', "7": '4',
-                              "8": 'c', "9": 'l', "10": 'b', "11": '.', "12": 'C', "13": 'Y', "14": 's', "15": 'B',
-                              "16": 'k', "17": '+', "18": 'p', "19": '2', "20": '7', "21": '8', "22": 'O',
-                              "23": '%', "24": 'o', "25": '6', "26": 'N', "27": 'A', "28": 't', "29": '$',
-                              "30": '(', "31": 'u', "32": 'Z', "33": '#', "34": 'M', "35": 'P', "36": 'G',
-                              "37": 'I', "38": '=', "39": '-', "40": 'X', "41": '@', "42": 'E', "43": '":',
-                              "44": '\\', "45": ')', "46": 'i', "47": 'K', "48": '/', "49": '{', "50": 'h',
-                              "51": 'L', "52": 'n', "53": 'U', "54": '[', "55": '0', "56": 'y', "57": 'e',
-                              "58": '3', "59": 'g', "60": 'f', "61": '}', "62": '1', "63": 'd', "64": 'W',
-                              "65": '5', "66": 'S', "67": 'F', "68": ']', "69": 'a', "70": 'm'}
+                         "8": 'c', "9": 'l', "10": 'b', "11": '.', "12": 'C', "13": 'Y', "14": 's', "15": 'B',
+                         "16": 'k', "17": '+', "18": 'p', "19": '2', "20": '7', "21": '8', "22": 'O',
+                         "23": '%', "24": 'o', "25": '6', "26": 'N', "27": 'A', "28": 't', "29": '$',
+                         "30": '(', "31": 'u', "32": 'Z', "33": '#', "34": 'M', "35": 'P', "36": 'G',
+                         "37": 'I', "38": '=', "39": '-', "40": 'X', "41": '@', "42": 'E', "43": '":',
+                         "44": '\\', "45": ')', "46": 'i', "47": 'K', "48": '/', "49": '{', "50": 'h',
+                         "51": 'L', "52": 'n', "53": 'U', "54": '[', "55": '0', "56": 'y', "57": 'e',
+                         "58": '3', "59": 'g', "60": 'f', "61": '}', "62": '1', "63": 'd', "64": 'W',
+                         "65": '5', "66": 'S', "67": 'F', "68": ']', "69": 'a', "70": 'm'}
         token_indices = {v: k for k, v in indices_token.items()}
     else:
         raise NotImplementedError
@@ -198,8 +196,7 @@ def is_valid_mol(smiles, return_smiles=False):
         smiles = smiles[1:]
     if 'E' in smiles:
         end_index = smiles.find('E')
-        if end_index != -1:
-            smiles = smiles[:end_index]
+        smiles = smiles[:end_index]
     try:
         m = CanonSmiles(smiles.strip(), 1)
     except:
@@ -347,80 +344,22 @@ def decorate_scaffold(scaffold, sidechains, num=10):
     return mols
 
 
-def get_rdkit_desc_functions():
-    desc_regex = re.compile("(.*MolWt)|(BertzCT)|(.*Count)|(Num.*)|(MolLogP)")
-    functions = []
-    descriptors = []
-    for descriptor, func in Descriptors.descList:
-        if desc_regex.match(descriptor):
-            descriptors = descriptors + [descriptor]
-            functions = functions + [func]
-    return functions, descriptors
+def randomize_smiles(smiles, num=10, isomeric=True):
+    """ Generate different SMILES representations for the same molecule
 
-
-def rdkit_desc(all_mols, functions):
+    :param smiles: {str} SMILES string
+    :param num: {int} number of different SMILES strings to generate
+    :param isomeric: {bool} whether to consider stereo centers
+    :return: different SMILES representation for same molecule
     """
-    Calculate all Molecular Weight, atom count, num atoms, molLogP descriptors from a list of molecules.
-    Return calculated descriptors, as well as list of which descriptors were calculated.
-    """
-    total_mols = len(all_mols)
-    desc = np.zeros([total_mols, len(functions)])
-    for i in range(total_mols):
-        if i % 1000 == 0 and i > 0:
-            print("Processed ", str(i), "molecules")
-        smiles = all_mols[i]
-        if smiles[0] == 'G':
-            smiles = smiles[1:]
-        end_index = smiles.find('E')
-        if end_index != -1:
-            smiles = smiles[:end_index]
-        if is_valid_mol(smiles):
-            mol = MolFromSmiles(smiles.strip())
-        else:
-            continue
-        j = 0
-        for func in functions:
-            desc[i, j] = func(mol)
-            j += 1
-    return desc
-
-
-def maccs_keys(smls):
-    """ Calculate MACCS keys and output them as a numpy array
-
-    :param smls: {list} list of molecules (RDKit mols)
-    :return: numpy array containing row-wise MACCS keys for every molecule
-    """
-    mols = [MolFromSmiles(s) for s in smls if MolFromSmiles(s)]
-    fps = [MACCSkeys.GenMACCSKeys(x) for x in mols]
-    np_fps = []
-    for fp in fps:
-        arr = np.zeros((1,))
-        ConvertToNumpyArray(fp, arr)
-        np_fps.append(arr)
-    return np.array(np_fps).reshape((len(mols), len(np_fps[-1])))
-
-
-def tanimoto(vector1, vector2):
-    """ function to calculate the taniomoto similarity of two binary vectors of the same length. only on-bits are
-    considered. The formula used is:
-
-    .. math::
-
-            S = c / (a + b - c)
-
-            a = on-bits in vector1
-            b = on-bits in vector2
-            c = on-bits in both vectors
-
-    :param vector1: {numpy.ndarray or list} first binary vector
-    :param vector2: {numpy.ndarray or list} second binary vector
-    :return: tanimoto similarity
-    """
-    a = np.where(vector1 == 1)[0]
-    b = np.where(vector2 == 1)[0]
-    c = len(np.intersect1d(a, b))
-    return float(c) / float(len(a) + len(b) - c)
+    m = MolFromSmiles(smiles)
+    res = list()
+    while len(set(res)) < num:
+        ans = list(range(m.GetNumAtoms()))
+        np.random.shuffle(ans)
+        nm = RenumberAtoms(m, ans)
+        res.append(MolToSmiles(nm, canonical=False, isomericSmiles=isomeric))
+    return res
 
 
 def compare_mollists(smiles, reference):
