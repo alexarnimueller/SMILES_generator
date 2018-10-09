@@ -4,6 +4,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
+from utils import get_most_similar
+from rdkit.Chem import MolFromSmiles
+from rdkit.Chem.Draw import MolsToGridImage
 
 
 def sim_hist(data, bins=25, color='#066170', filename=None):
@@ -21,6 +24,7 @@ def sim_hist(data, bins=25, color='#066170', filename=None):
     ax.spines['top'].set_visible(False)
     ax.xaxis.set_ticks_position('bottom')
     ax.yaxis.set_ticks_position('left')
+    ax.set_xlim([-0.075, 1.075])
     if filename:
         plt.savefig(filename)
     else:
@@ -50,3 +54,25 @@ def pca_plot(data, reference=None, colors=None, filename=None):
         plt.savefig(filename)
     else:
         plt.show()
+
+
+def plot_top_n(smiles, ref_smiles, n=1, fp='FCFP4', filename=None):
+    mols = list()
+    sims = list()
+    for r in ref_smiles:
+        if fp == 'FCFP4':
+            m, s = get_most_similar(smiles, referencemol=r, n=n)
+        elif fp == 'MACCS':
+            m, s = get_most_similar(smiles, referencemol=r, n=n, maccs=True)
+        else:
+            raise NotImplementedError('Only MACCS or FCFP4 fingerprints are available!')
+        mols.extend([r] + m)
+        sims.extend([1.] + s)
+    molecules = [MolFromSmiles(mol) for mol in mols]
+    img = MolsToGridImage(molecules, molsPerRow=n+1, subImgSize=(300, 300), legends=["%.4f" % s for s in sims])
+    if filename:
+        img.save(filename)
+        with open(filename[:-4] + '.csv', 'w') as f:
+            [f.write("%s,%.4f\n" % (m, s)) for m, s in zip(mols, sims)]
+    else:
+        img.show()

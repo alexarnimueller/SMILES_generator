@@ -369,6 +369,6 @@ def compare_mollists(smiles, reference):
     :param reference: {list} reference molecules as SMILES strings to compare to ``smiles``
     :return: {list} unique molecules from ``smiles`` as SMILES strings
     """
-    mols = set([MolFromSmiles(s) for s in smiles if MolFromSmiles(s)])
-    refs = set([MolFromSmiles(s) for s in reference if MolFromSmiles(s)])
-    return [MolToSmiles(m, True) for m in mols if not m in refs]
+    mols = set([CanonSmiles(s, 1) for s in smiles if MolFromSmiles(s)])
+    refs = set([CanonSmiles(s, 1) for s in reference if MolFromSmiles(s)])
+    return [m for m in mols if m not in refs]
