@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os
-import pickle
 import progressbar
 import numpy as np
 
@@ -10,34 +8,41 @@ from rdkit.Chem import CanonSmiles, MolFromSmiles, MolToSmiles, RenumberAtoms, R
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 
-def get_token(text, position):
+def _get_token(text, position):
     return list(text)[position], position + 1
 
 
-def read_smiles_file(dataset, pickled_name):
+def is_valid_mol(smiles, return_smiles=False):
+    """ function to check a generated SMILES string for validity
+
+    :param smiles: {str} SMILES string to be checked
+    :param return_smiles: {bool} whether the checked valid SMILES string should be returned
+    :return: {bool} validity
+    """
+    try:
+        m = CanonSmiles(smiles.strip(), 1)
+    except:
+        m = None
+    if return_smiles:
+        return m is not None, m
+    else:
+        return m is not None
+
+
+def read_smiles_file(dataset):
     """ read a file with molecules and pickle it after doing so, to be faster for the next time...
 
-    :param dataset: {str} filename of file with SMILES strings, one per line
-    :param pickled_name: {str} pickled version of dataset file, expected to be text of molecules, with each molecule
-        separated by newline
+    :param dataset: {str} filename of file with SMILES strings, containing one per line
+    :return: list of read SMILES strings
     """
-    text = ""
-    num_lines = 0
-    if not os.path.isfile(pickled_name):
-        with open(dataset) as f:
-            for line in f:
-                if num_lines % 10000 == 0:
-                    print("read %i lines" % num_lines)
-                fields = line.split(',')
-                smiles = fields[-1].strip()
-                text += smiles + '\n'
-                num_lines += 1
-        pickle.dump(text, open(pickled_name, 'wb'))
-    else:
-        print("Reading pickled file %s" % pickled_name)
-        text = pickle.load(open(pickled_name, 'rb'))
+    smls = list()
+    print("Reading %s..." % dataset)
+    pbar = progressbar.ProgressBar()
+    with open(dataset) as f:
+        for line in pbar(f):
+            smls.append(line.strip())
     print("Done reading all input...")
-    return text
+    return smls
 
 
 def pad_seqs(sequences, pad_char, given_len=0):
@@ -102,8 +107,7 @@ def tokenize_molecules(smiles, token_indices):
         mol_tokens = []
         posit = 0
         while posit < len(molecule):
-            t, p = get_token(molecule, posit)
-            posit = p
+            t, posit = _get_token(molecule, posit)
             mol_tokens += [token_indices[t]]
         tokens.append(mol_tokens)
     return np.array(tokens)
@@ -144,7 +148,7 @@ def tokenize_smiles(text, mode='default'):
                          "16": 'k', "17": '+', "18": 'p', "19": '2', "20": '7', "21": '8', "22": 'O',
                          "23": '%', "24": 'o', "25": '6', "26": 'N', "27": 'A', "28": 't', "29": '$',
                          "30": '(', "31": 'u', "32": 'Z', "33": '#', "34": 'M', "35": 'P', "36": 'G',
-                         "37": 'I', "38": '=', "39": '-', "40": 'X', "41": '@', "42": 'E', "43": '":',
+                         "37": 'I', "38": '=', "39": '-', "40": 'X', "41": '@', "42": 'E', "43": ':',
                          "44": '\\', "45": ')', "46": 'i', "47": 'K', "48": '/', "49": '{', "50": 'h',
                          "51": 'L', "52": 'n', "53": 'U', "54": '[', "55": '0', "56": 'y', "57": 'e',
                          "58": '3', "59": 'g', "60": 'f', "61": '}', "62": '1', "63": 'd', "64": 'W',
@@ -153,90 +157,6 @@ def tokenize_smiles(text, mode='default'):
     else:
         raise NotImplementedError
     return indices_token, token_indices
-
-
-def preprocess_smiles(smiles, stereochem=1, keep_fraction=1.):
-    """ desalt, uniquify, canonicalize and harmonize sidechains of molecules in a list of smiles strings
-
-        :param smiles: {list} list of SMILES strings
-        :param stereochem: {[0, 1]} whether stereochemistry should be considered (1) or not (0)
-        :param keep_fraction: {float} central fraction of the data to keep, selected by length
-        :return: list of preprocessed SMILES strings
-        """
-    smls = keep_longest(smiles)
-    mols = list()
-    for c, s in enumerate(list(set(smls))):
-        if c % 1000 == 0:
-            print("%i molecules preprocessed..." % c)
-        s = harmonize_sc(s)
-        try:
-            mols.append(CanonSmiles(s, stereochem))
-        except:
-            print("[Error] Can not process SMILES string %s" % s)
-            continue
-    if len(smls) - len(mols):
-        print("%i duplicates removed" % (len(smls) - len(mols)))
-    mols.sort(key=len)
-    lower = int((0.5 - (keep_fraction / 2.)) * len(mols))
-    upper = int((0.5 + (keep_fraction / 2.)) * len(mols)) - 1
-    print("{}% of string length considered".format(keep_fraction * 100))
-    print("Keeping lengths from %i to %i" % (len(mols[lower]), len(mols[upper])))
-    selected = [mols[i] for i in range(lower, upper)]
-    return np.random.choice(selected, len(selected))  # return unordered
-
-
-def is_valid_mol(smiles, return_smiles=False):
-    """ function to check a generated SMILES string for validity
-
-    :param smiles: {str} SMILES string to be checked
-    :param return_smiles: {bool} whether the checked valid SMILES string should be returned
-    :return: {bool} validity
-    """
-    if smiles[0] == 'G':
-        smiles = smiles[1:]
-    if 'E' in smiles:
-        end_index = smiles.find('E')
-        smiles = smiles[:end_index]
-    try:
-        m = CanonSmiles(smiles.strip(), 1)
-    except:
-        m = None
-    if return_smiles:
-        return m is not None, m
-    else:
-        return m is not None
-
-
-def keep_longest(smls):
-    """ function to keep the longest fragment of a smiles string after fragmentation by splitting at '.'
-
-    :param smls: {list} list of smiles strings
-    :return: {list} list of longest fragments
-    """
-    out = list()
-    for s in smls:
-        if '.' in s:
-            f = s.split('.')
-            lengths = [len(m) for m in f]
-            n = np.argmax(lengths)
-            out.append(f[n])
-        else:
-            out.append(s)
-    return out
-
-
-def harmonize_sc(mol):
-    """ harmonize the sidechains in a SMILES to a normalized format
-
-    :param mol: {str} molecule as SMILES string
-    :return: {str} harmonized molecule as SMILES string
-    """
-    # TODO: add more problematic sidechain representation that occur
-    pairs = [('[N](=O)[O-]', '[N+](=O)[O-]'),
-             ('[O-][N](=O)', '[O-][N+](=O)')]
-    for b, a in pairs:
-        mol = mol.replace(b, a)
-    return mol
 
 
 def extract_murcko_scaffolds(mol):

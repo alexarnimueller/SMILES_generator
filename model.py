@@ -1,17 +1,18 @@
-import os
-import pickle
 import json
+import os
 import random
-import tensorflow as tf
-import numpy as np
-from keras import backend as kb
-from keras.models import Sequential, load_model
-from keras.layers import LSTM, Dense, GaussianDropout, AlphaDropout, BatchNormalization, TimeDistributed
-from keras.optimizers import Adam
-from keras.callbacks import ModelCheckpoint
-from utils import read_smiles_file, tokenize_molecules, pad_seqs, generate_Xy, one_hot_encode, transform_temp, \
-    tokenize_smiles, is_valid_mol, preprocess_smiles, randomize_smiles, compare_mollists
 
+import numpy as np
+import tensorflow as tf
+from keras import backend as kb
+from keras.callbacks import ModelCheckpoint
+from keras.layers import LSTM, Dense, GaussianDropout, AlphaDropout, BatchNormalization, TimeDistributed
+from keras.models import Sequential, load_model
+from keras.optimizers import Adam
+
+from preprocess import preprocess_smiles
+from utils import read_smiles_file, tokenize_molecules, pad_seqs, generate_Xy, one_hot_encode, transform_temp, \
+    tokenize_smiles, is_valid_mol, randomize_smiles, compare_mollists
 
 np.random.seed(42)
 random.seed(42)
@@ -31,7 +32,7 @@ class SMILESmodel(object):
         self.sample_after = sample_after
         if self.sample_after == 0:
             self.sample_after = self.num_epochs + 1
-            print("Sampling after %i epochs" % self.sample_after)
+        print("Sampling after %i epochs" % self.sample_after)
         self.run_name = run_name
         self.checkpoint_dir = './checkpoint/' + run_name + "/"
         if not os.path.exists(self.checkpoint_dir):
@@ -44,17 +45,15 @@ class SMILESmodel(object):
         self.maxlen = None
         self.validation = validation
 
-    def load_data(self, preprocess=False, stereochem=1., percent_length=0.8, augment=3):
-        pickled_name = self.dataset.split(".")[0] + ".p"
-        text = read_smiles_file(self.dataset, pickled_name)
-        all_mols = text.split('\n')
+    def load_data(self, preprocess=False, stereochem=1., augment=1):
+        all_mols = read_smiles_file(self.dataset)
         if preprocess:
-            all_mols = preprocess_smiles(all_mols, stereochem, percent_length)
-        self.molecules = ["G" + m.strip() + "E" for m in all_mols]
+            all_mols = preprocess_smiles(all_mols, stereochem)
+        self.molecules = ["G%sE" % m for m in all_mols]
         self.maxlen = max([len(m) for m in self.molecules]) - 1
         if not self.n_mols:
             self.n_mols = len(self.molecules)  # if n_mols set to sample all: use all mols
-        del all_mols, text, pickled_name
+        del all_mols
         print("%i molecules loaded from %s..." % (len(self.molecules), self.dataset))
         if augment > 1:
             augmented_mols = np.asarray([randomize_smiles(s, num=augment) for s in self.molecules]).flatten()
@@ -69,7 +68,7 @@ class SMILESmodel(object):
         json.dump(self.indices_token, open(self.checkpoint_dir + "indices_token.json", 'w'))
         json.dump(self.token_indices, open(self.checkpoint_dir + "token_indices.json", 'w'))
         del text
-        print("Molecules tokenized, token saved...")
+        print("Molecules tokenized, tokenizer saved...")
 
     def build_model(self, layers=2, neurons=256, dropoutfrac=0.2):
         self.model = Sequential()
@@ -84,7 +83,7 @@ class SMILESmodel(object):
         self.model.compile(loss='categorical_crossentropy', optimizer=optimizer)
         print("Model built...")
 
-    def train_model(self):
+    def train_model(self, n_sample=10):
         shuffled_mol = random.sample(self.molecules, len(self.molecules))
         print("Molecules shuffeled...")
         tokens = tokenize_molecules(shuffled_mol, self.token_indices)
@@ -106,10 +105,10 @@ class SMILESmodel(object):
             if self.validation:
                 val_split = int(self.validation * len(indices))
                 mols_val, mols_train = np.split(tokens[indices], [val_split])  # split train and validation set
-                val_tokens, val_next_tokens = generate_Xy(mols_val, self.maxlen - 1)
+                val_tokens, val_next_tokens = generate_Xy(mols_val, self.maxlen)
                 X_val = one_hot_encode(val_tokens, self.n_chars)
                 y_val = one_hot_encode(val_next_tokens, self.n_chars)
-                train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen - 1)
+                train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen)
                 X_train = one_hot_encode(train_tokens, self.n_chars)
                 y_train = one_hot_encode(train_next_tokens, self.n_chars)
                 history = self.model.fit(X_train, y_train, batch_size=self.batch_size, epochs=1,
@@ -120,7 +119,7 @@ class SMILESmodel(object):
                 del val_tokens, val_next_tokens, train_tokens, train_next_tokens
             else:
                 mols_train = tokens[indices]
-                train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen - 1)
+                train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen)
                 X_train = one_hot_encode(train_tokens, self.n_chars)
                 y_train = one_hot_encode(train_next_tokens, self.n_chars)
                 history = self.model.fit(X_train, y_train, batch_size=self.batch_size, epochs=1, shuffle=False,
@@ -131,7 +130,6 @@ class SMILESmodel(object):
             writer.add_summary(loss_sum, i)
 
             if (i + 1) % self.sample_after == 0:
-                n_sample = 100
                 for temp in [0.75, 1.0, 1.2]:
                     valid_mols = self.sample_points(n_sample, temp)
                     n_valid = len(valid_mols)
@@ -156,9 +154,9 @@ class SMILESmodel(object):
         print("----- temp: %.2f -----" % temp)
         for x in range(n_sample):
             smiles = self.sample(temp, prime_text)
-            print(smiles[1:])
+            print(smiles)
             if is_valid_mol(smiles):
-                valid_mols += [smiles[1:]]
+                valid_mols.append(smiles)
         return valid_mols
 
     def sample(self, temp, prime_text="G", maxlen=100):
@@ -175,7 +173,10 @@ class SMILESmodel(object):
             next_char = self.indices_token[str(next_char_ind)]
             generated += next_char
             seed_token += [next_char_ind]
-        return generated[:-1]
+        if generated[-1] == 'E':
+            return generated[1:-1]
+        else:
+            return generated[1:]
 
     def load_model_from_file(self, checkpoint_dir, epoch):
         model_file = checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(epoch)
@@ -185,10 +186,6 @@ class SMILESmodel(object):
 
     def load_token(self, dirname):
         print("Loading token sets from %s ..." % dirname)
-        try:
-            self.indices_token = json.load(open(os.path.join(dirname, "indices_token.json"), 'r'))
-            self.token_indices = json.load(open(os.path.join(dirname, "token_indices.json"), 'r'))
-        except:
-            self.indices_token = pickle.load(open(os.path.join(dirname, "indices_token.p"), 'rb'))
-            self.token_indices = pickle.load(open(os.path.join(dirname, "token_indices.p"), 'rb'))
+        self.indices_token = json.load(open(os.path.join(dirname, "indices_token.json"), 'r'))
+        self.token_indices = json.load(open(os.path.join(dirname, "token_indices.json"), 'r'))
         self.n_chars = len(self.indices_token.keys())

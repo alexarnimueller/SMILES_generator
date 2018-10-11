@@ -22,7 +22,6 @@ flags.DEFINE_integer("n_mols", 0, "number of molecules to sample for training ev
 flags.DEFINE_integer("augment", 3, "whether different SMILES strings should generated for the same molecule, [1-n]")
 flags.DEFINE_boolean("preprocess", False, "whether to pre-process stereo chemistry/salts etc.")
 flags.DEFINE_integer("stereochemistry", 1, "whether stereo chemistry information should be included [0, 1]")
-flags.DEFINE_float("percent_length", 1.0, "fraction of SMILES length to take into account ")
 flags.DEFINE_float("validation", 0.2, "fraction of the data to use as a validation set")
 
 FLAGS = flags.FLAGS
@@ -33,8 +32,7 @@ def main(_):
     model = SMILESmodel(batch_size=FLAGS.batch_size, dataset=FLAGS.dataset,
                         num_epochs=FLAGS.epochs, lr=FLAGS.learning_rate, n_mols=FLAGS.n_mols,
                         run_name=FLAGS.run_name, sample_after=FLAGS.sample_after, validation=FLAGS.validation)
-    model.load_data(preprocess=FLAGS.preprocess, stereochem=FLAGS.stereochemistry, percent_length=FLAGS.percent_length,
-                    augment=FLAGS.augment)
+    model.load_data(preprocess=FLAGS.preprocess, stereochem=FLAGS.stereochemistry, augment=FLAGS.augment)
     model.build_tokenizer(tokenize=FLAGS.tokenizer, pad_char='A')
     model.build_model(layers=FLAGS.layers, neurons=FLAGS.neurons, dropoutfrac=FLAGS.dropout)
     model.train_model()
