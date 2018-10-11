@@ -6,8 +6,8 @@ import numpy as np
 import tensorflow as tf
 from keras import backend as kb
 from keras.callbacks import ModelCheckpoint
-from keras.layers import LSTM, Dense, GaussianDropout, AlphaDropout, BatchNormalization, TimeDistributed
-from keras.models import Sequential, load_model
+from keras.layers import Input, LSTM, Dense, GaussianDropout, AlphaDropout, BatchNormalization, TimeDistributed, RepeatVector
+from keras.models import Sequential, Model, load_model
 from keras.optimizers import Adam
 
 from preprocess import preprocess_smiles
@@ -189,3 +189,28 @@ class SMILESmodel(object):
         self.indices_token = json.load(open(os.path.join(dirname, "indices_token.json"), 'r'))
         self.token_indices = json.load(open(os.path.join(dirname, "token_indices.json"), 'r'))
         self.n_chars = len(self.indices_token.keys())
+
+
+class SMILESautoencoder(SMILESmodel):
+    def build_model(self, layers=2, neurons=32, dropoutfrac=0.3):
+        # encoder
+        print(len(self.molecules), self.maxlen, self.n_chars)
+        inputs = Input(shape=(self.maxlen, self.n_chars))
+        encoded = LSTM(self.n_chars, unit_forget_bias=True, return_sequences=True)(inputs)
+        encoded = GaussianDropout(dropoutfrac)(encoded)
+        encoded = LSTM(neurons)(encoded)
+        self.encoder = Model(inputs, encoded)
+
+        # decoder
+        decoded = RepeatVector(self.maxlen)(encoded)
+        decoded = LSTM(neurons, unit_forget_bias=True, return_sequences=True)(decoded)
+        decoded = GaussianDropout(dropoutfrac)(decoded)
+        decoded = LSTM(self.n_chars, return_sequences=True)(decoded)
+        decoded = Dense(self.n_chars, activation='softmax')(decoded)
+
+        # autoencoder
+        self.model = Model(inputs, decoded)
+        self.model.compile(optimizer=Adam(lr=self.lr), loss='categorical_crossentropy')
+        print("Model built...")
+
+# TODO: make data for AE right

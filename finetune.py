@@ -47,7 +47,7 @@ def main(_):
     print("Valid:\t{}/{}".format(len(valid_mols), FLAGS.num_sample))
 
     os.system("cp %s*.json ./checkpoint/%s/" % (FLAGS.model_path, run))  # copy tokenizer files to fine-tuned folder
-    json.dump(FLAGS.__flags.items(), open('./checkpoint/%s/flags.json' % run, 'w'))  # save used flags
+    # json.dump(FLAGS.__flags.items(), open('./checkpoint/%s/flags.json' % run, 'w'))  # save used flags
 
 
 if __name__ == '__main__':
