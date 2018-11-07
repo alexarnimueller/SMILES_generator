@@ -59,11 +59,7 @@ def pad_seqs(sequences, pad_char, given_len=0):
         length = max([len(seq) for seq in sequences])
     else:
         length = given_len
-    padded_seqs = []
-    for seq in sequences:
-        padded_seq = seq + [pad_char] * (length - len(seq))
-        padded_seqs += [padded_seq]
-    return np.array(padded_seqs)
+    return np.array([seq + pad_char * (length - len(seq)) for seq in sequences])
 
 
 def transform_temp(preds, temp):
@@ -130,7 +126,7 @@ def generate_Xy(tokens, maxlen, step=1):
     return np.array(inputs), np.array(targets)
 
 
-def tokenize_smiles(text, mode='default'):
+def tokenize_smiles(text=None, mode='default'):
     """ function to generate all possible token of a text and put them into two translation dictionaries
 
     :param text: text to tokenize
@@ -165,14 +161,12 @@ def extract_murcko_scaffolds(mol):
     :param mol: {str} smiles string of a molecule.
     :return: smiles string of a scaffold.
     """
-
     m1 = MolFromSmiles(mol)
     try:
         core = MurckoScaffold.GetScaffoldForMol(m1)
         scaf = MolToSmiles(core, isomericSmiles=True)
     except:
         return ''
-
     return scaf
 
 
@@ -217,10 +211,8 @@ def extract_side_chains(mol, remove_duplicates=False, mark='[*]'):
         smi = MolToSmiles(side_chain, isomericSmiles=True)  # isomericSmiles adds a number to the dummy atoms.
     except:
         return list()
-
     for i in pos:
         smi = smi.replace(''.join(set_pos[i]), mark)
-
     if remove_duplicates:
         return list(set(smi.split('.')))
     else:
