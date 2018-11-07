@@ -6,7 +6,8 @@ import numpy as np
 import tensorflow as tf
 from keras import backend as kb
 from keras.callbacks import ModelCheckpoint
-from keras.layers import Input, LSTM, Dense, GaussianDropout, AlphaDropout, BatchNormalization, TimeDistributed, RepeatVector
+from keras.layers import Input, LSTM, Dense, GaussianDropout, AlphaDropout, BatchNormalization, TimeDistributed, \
+    RepeatVector
 from keras.models import Sequential, Model, load_model
 from keras.optimizers import Adam
 
@@ -49,17 +50,20 @@ class SMILESmodel(object):
         all_mols = read_smiles_file(self.dataset)
         if preprocess:
             all_mols = preprocess_smiles(all_mols, stereochem)
-        self.molecules = ["G%sE" % m for m in all_mols]
+        self.molecules = all_mols
         self.maxlen = max([len(m) for m in self.molecules]) - 1
-        if not self.n_mols:
-            self.n_mols = len(self.molecules)  # if n_mols set to sample all: use all mols
         del all_mols
         print("%i molecules loaded from %s..." % (len(self.molecules), self.dataset))
         if augment > 1:
-            augmented_mols = np.asarray([randomize_smiles(s, num=augment) for s in self.molecules]).flatten()
+            augmented_mols = list()
+            for s in self.molecules:
+                augmented_mols.extend(randomize_smiles(s, num=augment))
             print("%i SMILES strings generated for %i molecules" % (len(augmented_mols), len(self.molecules)))
             self.molecules = augmented_mols
             del augmented_mols
+        self.molecules = ["G%sE" % m for m in self.molecules]
+        if not self.n_mols:
+            self.n_mols = len(self.molecules)  # if n_mols set to sample all: use all mols
 
     def build_tokenizer(self, tokenize='default', pad_char="A"):
         text = pad_char.join(self.molecules)
@@ -68,7 +72,6 @@ class SMILESmodel(object):
         json.dump(self.indices_token, open(self.checkpoint_dir + "indices_token.json", 'w'))
         json.dump(self.token_indices, open(self.checkpoint_dir + "token_indices.json", 'w'))
         del text
-        print("Molecules tokenized, tokenizer saved...")
 
     def build_model(self, layers=2, neurons=256, dropoutfrac=0.2):
         self.model = Sequential()
@@ -81,50 +84,47 @@ class SMILESmodel(object):
         self.model.add(TimeDistributed(Dense(self.n_chars, activation='softmax', name="dense")))
         optimizer = Adam(lr=self.lr)
         self.model.compile(loss='categorical_crossentropy', optimizer=optimizer)
-        print("Model built...")
+
+    def generator(self, train_or_val):
+        for batch in np.array_split(self.molecules, len(self.molecules) / self.batch_size):
+            shuffled_mol = np.random.choice(batch, len(batch), replace=False)
+            token = tokenize_molecules(shuffled_mol, self.token_indices)
+            token = pad_seqs(token, pad_char=self.token_indices["A"], given_len=self.maxlen)
+            valsplit = int(self.validation * len(batch))
+            mols_val, mols_train = np.split(token, [valsplit])
+            if train_or_val == 'val':
+                val_tokens, val_next_tokens = generate_Xy(mols_val, self.maxlen - 2)
+                x_val = one_hot_encode(val_tokens, self.n_chars)
+                y_val = one_hot_encode(val_next_tokens, self.n_chars)
+                yield x_val, y_val
+
+            elif train_or_val == 'train':
+                train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen - 2)
+                x_train = one_hot_encode(train_tokens, self.n_chars)
+                y_train = one_hot_encode(train_next_tokens, self.n_chars)
+                yield x_train, y_train
 
     def train_model(self, n_sample=10):
-        shuffled_mol = random.sample(self.molecules, len(self.molecules))
-        print("Molecules shuffeled...")
-        tokens = tokenize_molecules(shuffled_mol, self.token_indices)
-        print("SMILES tokenized...")
-        tokens = pad_seqs(tokens, pad_char=self.token_indices["A"])
-        print("SMILES padded...")
-
+        print("Training model...")
         writer = tf.summary.FileWriter('./logs/' + self.run_name, graph=sess.graph)
         mol_file = open("./generated/" + self.run_name + "_generated.csv", 'a')
-
-        print("Training model...")
         i = 0
         while i < self.num_epochs:
             print("\n------ ITERATION %i ------" % i)
-
-            indices = np.random.choice(range(len(tokens)), self.n_mols, replace=False)  # choose n_mols random tokens
             chkpntr = ModelCheckpoint(filepath=self.checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(i), verbose=1)
 
             if self.validation:
-                val_split = int(self.validation * len(indices))
-                mols_val, mols_train = np.split(tokens[indices], [val_split])  # split train and validation set
-                val_tokens, val_next_tokens = generate_Xy(mols_val, self.maxlen)
-                X_val = one_hot_encode(val_tokens, self.n_chars)
-                y_val = one_hot_encode(val_next_tokens, self.n_chars)
-                train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen)
-                X_train = one_hot_encode(train_tokens, self.n_chars)
-                y_train = one_hot_encode(train_next_tokens, self.n_chars)
-                history = self.model.fit(X_train, y_train, batch_size=self.batch_size, epochs=1,
-                                         validation_data=(X_val, y_val), shuffle=False, callbacks=[chkpntr])
+                steps = len(np.array_split(self.molecules, len(self.molecules) / self.batch_size))
+                history = self.model.fit_generator(generator=self.generator('train'), steps_per_epoch=steps,
+                                                   epochs=1, validation_data=self.generator('val'),
+                                                   validation_steps=steps, callbacks=[chkpntr])
                 val_loss_sum = tf.Summary(
                     value=[tf.Summary.Value(tag="val_loss", simple_value=history.history['val_loss'][-1])])
                 writer.add_summary(val_loss_sum, i)
-                del val_tokens, val_next_tokens, train_tokens, train_next_tokens
+
             else:
-                mols_train = tokens[indices]
-                train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen)
-                X_train = one_hot_encode(train_tokens, self.n_chars)
-                y_train = one_hot_encode(train_next_tokens, self.n_chars)
-                history = self.model.fit(X_train, y_train, batch_size=self.batch_size, epochs=1, shuffle=False,
-                                         callbacks=[chkpntr])
-                del train_tokens, train_next_tokens
+                history = self.model.fit_generator(generator=self.generator('train'), steps_per_epoch=self.n_mols,
+                                                   epochs=1, callbacks=[chkpntr])
 
             loss_sum = tf.Summary(value=[tf.Summary.Value(tag="loss", simple_value=history.history['loss'][-1])])
             writer.add_summary(loss_sum, i)
@@ -133,7 +133,7 @@ class SMILESmodel(object):
                 for temp in [0.75, 1.0, 1.2]:
                     valid_mols = self.sample_points(n_sample, temp)
                     n_valid = len(valid_mols)
-                    novel = compare_mollists(valid_mols, np.array(shuffled_mol)[indices])
+                    novel = compare_mollists(valid_mols, np.array(self.molecules))
                     mol_file.write("\n".join(set(valid_mols)))
 
                     valid_sum = tf.Summary(value=[
@@ -154,9 +154,10 @@ class SMILESmodel(object):
         print("----- temp: %.2f -----" % temp)
         for x in range(n_sample):
             smiles = self.sample(temp, prime_text)
-            print(smiles)
-            if is_valid_mol(smiles):
-                valid_mols.append(smiles)
+            val, s = is_valid_mol(smiles, True)
+            print(s)
+            if val:
+                valid_mols.append(s)
         return valid_mols
 
     def sample(self, temp, prime_text="G", maxlen=100):
@@ -173,10 +174,7 @@ class SMILESmodel(object):
             next_char = self.indices_token[str(next_char_ind)]
             generated += next_char
             seed_token += [next_char_ind]
-        if generated[-1] == 'E':
-            return generated[1:-1]
-        else:
-            return generated[1:]
+        return generated
 
     def load_model_from_file(self, checkpoint_dir, epoch):
         model_file = checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(epoch)

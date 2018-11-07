@@ -3,7 +3,7 @@
 
 import tensorflow as tf
 
-from utils import maccs_keys, tanimoto, compare_mollists, numpy_fps
+from descriptorcalculation import maccs_keys, tanimoto, compare_mollists, numpy_fps
 from plotting import sim_hist, pca_plot, plot_top_n
 
 flags = tf.app.flags

@@ -4,6 +4,8 @@
 import progressbar
 import numpy as np
 
+from multiprocessing import cpu_count, Process, Queue
+
 from rdkit.Chem import CanonSmiles, MolFromSmiles, MolToSmiles, RenumberAtoms, ReplaceSidechains, ReplaceCore
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
@@ -20,7 +22,7 @@ def is_valid_mol(smiles, return_smiles=False):
     :return: {bool} validity
     """
     try:
-        m = CanonSmiles(smiles.strip(), 1)
+        m = CanonSmiles(smiles.replace('G', '').replace('E', '').strip(), 1)
     except:
         m = None
     if return_smiles:
@@ -41,7 +43,6 @@ def read_smiles_file(dataset):
     with open(dataset) as f:
         for line in pbar(f):
             smls.append(line.strip())
-    print("Done reading all input...")
     return smls
 
 
@@ -100,7 +101,6 @@ def tokenize_molecules(smiles, token_indices):
     :param token_indices: {dict} translation dictionary for token to indices
     :return: tokenized SMILES strings in a list of lists
     """
-    print("One-hot encoding...")
     tokens = []
     pbar = progressbar.ProgressBar()
     for molecule in pbar(smiles):
@@ -264,6 +264,20 @@ def decorate_scaffold(scaffold, sidechains, num=10):
     return mols
 
 
+def compare_mollists(smiles, reference):
+    """ get the molecules from ``smiles`` that are not in ``reference``
+
+    :param smiles: {list} list of SMILES strings to check for known reference in ``reference``
+    :param reference: {list} reference molecules as SMILES strings to compare to ``smiles``
+    :return: {list} unique molecules from ``smiles`` as SMILES strings
+    """
+    smiles = [s.replace('G', '').replace('E', '').replace('A', '') for s in smiles]
+    reference = [s.replace('G', '').replace('E', '').replace('A', '') for s in reference]
+    mols = set([CanonSmiles(s, 1) for s in smiles if MolFromSmiles(s)])
+    refs = set([CanonSmiles(s, 1) for s in reference if MolFromSmiles(s)])
+    return [m for m in mols if m not in refs]
+
+
 def randomize_smiles(smiles, num=10, isomeric=True):
     """ Generate different SMILES representations for the same molecule
 
@@ -282,13 +296,33 @@ def randomize_smiles(smiles, num=10, isomeric=True):
     return res
 
 
-def compare_mollists(smiles, reference):
-    """ get the molecules from ``smiles`` that are not in ``reference``
+def randomize_smileslist(smiles, num=10, isomeric=True):
+    """ Generate different SMILES representations for the same molecule from a list of smiles strings
 
-    :param smiles: {list} list of SMILES strings to check for known reference in ``reference``
-    :param reference: {list} reference molecules as SMILES strings to compare to ``smiles``
-    :return: {list} unique molecules from ``smiles`` as SMILES strings
+    :param smiles: {str} list of SMILES strings
+    :param num: {int} number of different SMILES strings to generate
+    :param isomeric: {bool} whether to consider stereo centers
+    :return: different SMILES representation for all molecule in the input list
     """
-    mols = set([CanonSmiles(s, 1) for s in smiles if MolFromSmiles(s)])
-    refs = set([CanonSmiles(s, 1) for s in reference if MolFromSmiles(s)])
-    return [m for m in mols if m not in refs]
+    def _one_random(smls, n, iso, q):
+        res = list()
+        for s in smls:
+            r = list()
+            m = MolFromSmiles(s)
+            if m:
+                while len(set(r)) < n:
+                    ans = list(range(m.GetNumAtoms()))
+                    np.random.shuffle(ans)
+                    nm = RenumberAtoms(m, ans)
+                    r.append(MolToSmiles(nm, canonical=False, isomericSmiles=iso))
+                res.extend(r)
+        q.put(res)
+
+    queue = Queue()
+    rslt = []
+    for l in np.array_split(np.array(smiles), cpu_count()):
+        p = Process(target=_one_random, args=(l, num, isomeric, queue))
+        p.start()
+    for _ in range(cpu_count()):
+        rslt.extend(queue.get(10))
+    return list(set(rslt))

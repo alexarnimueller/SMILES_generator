@@ -100,4 +100,4 @@ checkpoint/
 logs/
 plots/
 generated/
-data
+data/
