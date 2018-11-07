@@ -13,7 +13,7 @@ from keras.optimizers import Adam
 
 from preprocess import preprocess_smiles
 from utils import read_smiles_file, tokenize_molecules, pad_seqs, generate_Xy, one_hot_encode, transform_temp, \
-    tokenize_smiles, is_valid_mol, randomize_smiles, compare_mollists
+    tokenize_smiles, is_valid_mol, randomize_smileslist, compare_mollists
 
 np.random.seed(42)
 random.seed(42)
@@ -24,10 +24,10 @@ kb.set_session(sess)
 
 class SMILESmodel(object):
     def __init__(self, batch_size=128, dataset='data/default', num_epochs=25, lr=0.001,
-                 sample_after=0, run_name="default", n_mols=0, validation=0.2):
+                 sample_after=0, run_name="default", validation=0.2):
         self.lr = lr
         self.dataset = dataset
-        self.n_mols = n_mols
+        self.n_mols = 0
         self.batch_size = batch_size
         self.num_epochs = num_epochs
         self.sample_after = sample_after
@@ -55,15 +55,13 @@ class SMILESmodel(object):
         del all_mols
         print("%i molecules loaded from %s..." % (len(self.molecules), self.dataset))
         if augment > 1:
-            augmented_mols = list()
-            for s in self.molecules:
-                augmented_mols.extend(randomize_smiles(s, num=augment))
+            print("augmenting SMILES %i-fold..." % augment)
+            augmented_mols = randomize_smileslist(self.molecules, num=augment)
             print("%i SMILES strings generated for %i molecules" % (len(augmented_mols), len(self.molecules)))
             self.molecules = augmented_mols
             del augmented_mols
         self.molecules = ["G%sE" % m for m in self.molecules]
-        if not self.n_mols:
-            self.n_mols = len(self.molecules)  # if n_mols set to sample all: use all mols
+        self.n_mols = len(self.molecules)
 
     def build_tokenizer(self, tokenize='default', pad_char="A"):
         text = pad_char.join(self.molecules)
@@ -97,7 +95,6 @@ class SMILESmodel(object):
                 x_val = one_hot_encode(val_tokens, self.n_chars)
                 y_val = one_hot_encode(val_next_tokens, self.n_chars)
                 yield x_val, y_val
-
             elif train_or_val == 'train':
                 train_tokens, train_next_tokens = generate_Xy(mols_train, self.maxlen - 2)
                 x_train = one_hot_encode(train_tokens, self.n_chars)

@@ -4,6 +4,7 @@
 import progressbar
 import numpy as np
 
+from time import time
 from multiprocessing import cpu_count, Process, Queue
 
 from rdkit.Chem import CanonSmiles, MolFromSmiles, MolToSmiles, RenumberAtoms, ReplaceSidechains, ReplaceCore
@@ -102,8 +103,7 @@ def tokenize_molecules(smiles, token_indices):
     :return: tokenized SMILES strings in a list of lists
     """
     tokens = []
-    pbar = progressbar.ProgressBar()
-    for molecule in pbar(smiles):
+    for molecule in smiles:
         mol_tokens = []
         posit = 0
         while posit < len(molecule):
@@ -310,7 +310,8 @@ def randomize_smileslist(smiles, num=10, isomeric=True):
             r = list()
             m = MolFromSmiles(s)
             if m:
-                while len(set(r)) < n:
+                start = time()
+                while len(set(r)) < n and (time() - start) < 10:
                     ans = list(range(m.GetNumAtoms()))
                     np.random.shuffle(ans)
                     nm = RenumberAtoms(m, ans)
