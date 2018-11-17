@@ -6,6 +6,8 @@ import numpy as np
 
 from time import time
 from multiprocessing import cpu_count, Process, Queue
+from descriptorcalculation import numpy_maccs, numpy_fps, parallel_pairwise_similarities
+from cats import cats_descriptor
 
 from rdkit.Chem import CanonSmiles, MolFromSmiles, MolToSmiles, RenumberAtoms, ReplaceSidechains, ReplaceCore
 from rdkit.Chem.Scaffolds import MurckoScaffold
@@ -268,6 +270,34 @@ def compare_mollists(smiles, reference):
     mols = set([CanonSmiles(s, 1) for s in smiles if MolFromSmiles(s)])
     refs = set([CanonSmiles(s, 1) for s in reference if MolFromSmiles(s)])
     return [m for m in mols if m not in refs]
+
+
+def get_most_similar(smiles, referencemol, n=10, desc='FCFP4', similarity='tanimoto'):
+    """ get the n most similar molecules in a list of smiles compared to a reference molecule
+
+    :param smiles: {list} list of SMILES strings
+    :param referencemol: {str} SMILES string of reference molecule
+    :param n: {int} number of most similar molecules to get
+    :param desc: {str} which descriptor / fingerprint to use, choose from ['FCFP4', 'MACCS', 'CATS']
+    :param similarity: {str} how to calculate the similarity between two molecules. use 'tanimoto' for FCFP4 & MACCS
+        and 'euclidean' for CATS.
+    :return: n most similar molecules (SMILES) in a list
+    """
+    if desc.upper() == 'FCFP4':
+        d_lib = numpy_fps([MolFromSmiles(s) for s in smiles], 2, True, 1024)
+        d_ref = numpy_fps([MolFromSmiles(referencemol)], 2, True, 1024)
+    elif desc.upper() == 'MACCS':
+        d_lib = numpy_maccs([MolFromSmiles(s) for s in smiles])
+        d_ref = numpy_maccs([MolFromSmiles(referencemol)])
+    elif desc.upper() == 'CATS':
+        d_lib = cats_descriptor([MolFromSmiles(s) for s in smiles])
+        d_ref = cats_descriptor([MolFromSmiles(referencemol)])
+    else:
+        raise NotImplementedError('Only FCFP4, MACCS or CATS fingerprints are available!')
+
+    sims = parallel_pairwise_similarities(d_lib, d_ref, similarity).flatten()
+    top_n = np.argsort(sims)[-n:][::-1]
+    return np.array(smiles)[top_n].flatten(), sims[top_n].flatten()
 
 
 def randomize_smiles(smiles, num=10, isomeric=True):
