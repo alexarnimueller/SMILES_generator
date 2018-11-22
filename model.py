@@ -6,13 +6,13 @@ import numpy as np
 import tensorflow as tf
 from keras import backend as kb
 from keras.callbacks import ModelCheckpoint
-from keras.layers import Input, LSTM, Dense, GaussianDropout, BatchNormalization, RepeatVector
-from keras.models import Sequential, Model, load_model
+from keras.layers import BatchNormalization, Dense, GaussianDropout, Input, LSTM
+from keras.models import Model, load_model
 from keras.optimizers import Adam
 
 from preprocess import preprocess_smiles
 from utils import read_smiles_file, tokenize_molecules, pad_seqs, generate_Xy, one_hot_encode, transform_temp, \
-    tokenize_smiles, is_valid_mol, randomize_smileslist, compare_mollists
+    tokenizer, is_valid_mol, randomize_smileslist, compare_mollists
 
 np.random.seed(42)
 random.seed(42)
@@ -39,6 +39,8 @@ class SMILESmodel(object):
         self.validation = validation
         self.n_chars = None
         self.molecules = None
+        self.val_mols = None
+        self.train_mols = None
         self.token_indices = None
         self.indices_token = None
         self.model = None
@@ -52,27 +54,30 @@ class SMILESmodel(object):
         self.maxlen = max([len(m) for m in self.molecules]) + 2
         del all_mols
         print("%i molecules loaded from %s..." % (len(self.molecules), self.dataset))
+        print("Maximal length: %i" % self.maxlen)
         if augment > 1:
             print("augmenting SMILES %i-fold..." % augment)
             augmented_mols = randomize_smileslist(self.molecules, num=augment)
             print("%i SMILES strings generated for %i molecules" % (len(augmented_mols), len(self.molecules)))
             self.molecules = augmented_mols
             del augmented_mols
-        self.molecules = pad_seqs(["G%sE" % m for m in self.molecules], 'A', given_len=self.maxlen)
+        self.molecules = pad_seqs(["^%s$" % m for m in self.molecules], ' ', given_len=self.maxlen)
         self.n_mols = len(self.molecules)
+        self.val_mols, self.train_mols = np.split(np.random.choice(
+            self.molecules, self.n_mols, replace=False), [int(self.validation * self.n_mols)])
 
     def build_tokenizer(self, tokenize='default'):
-        self.indices_token, self.token_indices = tokenize_smiles(mode=tokenize)
+        self.indices_token, self.token_indices = tokenizer(mode=tokenize)
         self.n_chars = len(self.indices_token.keys())
         json.dump(self.indices_token, open(self.checkpoint_dir + "indices_token.json", 'w'))
         json.dump(self.token_indices, open(self.checkpoint_dir + "token_indices.json", 'w'))
 
-    def build_model(self, neurons=256, dropout=0.2):
+    def build_model(self):
         l_in = Input(shape=(None, self.n_chars), name='Input')
-        l_out = LSTM(neurons, unit_forget_bias=True, return_sequences=True, name='LSTM_1')(l_in)
-        l_out = GaussianDropout(dropout, name='Dropout_1')(l_out)
-        l_out = LSTM(neurons, unit_forget_bias=True, return_sequences=True, name='LSTM_2')(l_out)
-        l_out = GaussianDropout(dropout, name='Dropout_2')(l_out)
+        l_out = LSTM(512, unit_forget_bias=True, return_sequences=True, name='LSTM_1')(l_in)
+        l_out = GaussianDropout(0.3, name='Dropout_1')(l_out)
+        l_out = LSTM(256, unit_forget_bias=True, return_sequences=True, name='LSTM_2')(l_out)
+        l_out = GaussianDropout(0.2, name='Dropout_2')(l_out)
         l_out = BatchNormalization(name='BatchNorm')(l_out)
         l_out = Dense(self.n_chars, activation='softmax', name="Dense")(l_out)
         self.model = Model(l_in, l_out)
@@ -80,15 +85,16 @@ class SMILESmodel(object):
         self.model.compile(loss='categorical_crossentropy', optimizer=optimizer)
 
     def generator(self, train_or_val):
-        for batch in np.array_split(self.molecules, len(self.molecules) / self.batch_size):
-            token = tokenize_molecules(np.random.choice(batch, len(batch), replace=False), self.token_indices)
-            if train_or_val == 'val':
-                mols_val, _ = np.split(token, [int(self.validation * len(batch))])
-                val_tokens, val_next_tokens = generate_Xy(mols_val, self.maxlen - 2)
+        if train_or_val == 'val':
+            for batch in np.array_split(self.val_mols, len(self.val_mols) / self.batch_size):
+                token = tokenize_molecules(np.random.choice(batch, len(batch), replace=False), self.token_indices)
+                val_tokens, val_next_tokens = generate_Xy(token, self.maxlen - 2)
                 x_val = one_hot_encode(val_tokens, self.n_chars)
                 y_val = one_hot_encode(val_next_tokens, self.n_chars)
                 yield x_val, y_val
-            elif train_or_val == 'train':
+        elif train_or_val == 'train':
+            for batch in np.array_split(self.train_mols, len(self.train_mols) / self.batch_size):
+                token = tokenize_molecules(np.random.choice(batch, len(batch), replace=False), self.token_indices)
                 train_tokens, train_next_tokens = generate_Xy(token, self.maxlen - 2)
                 x_train = one_hot_encode(train_tokens, self.n_chars)
                 y_train = one_hot_encode(train_next_tokens, self.n_chars)
@@ -102,17 +108,18 @@ class SMILESmodel(object):
         while i < self.num_epochs:
             print("\n------ ITERATION %i ------" % i)
             chkpntr = ModelCheckpoint(filepath=self.checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(i), verbose=1)
-            steps = len(np.array_split(self.molecules, len(self.molecules) / self.batch_size))
-
             if self.validation:
-                history = self.model.fit_generator(generator=self.generator('train'), steps_per_epoch=steps,
+                trainsteps = len(np.array_split(self.train_mols, len(self.train_mols) / self.batch_size))
+                valsteps = len(np.array_split(self.val_mols, len(self.val_mols) / self.batch_size))
+                history = self.model.fit_generator(generator=self.generator('train'), steps_per_epoch=trainsteps,
                                                    epochs=1, validation_data=self.generator('val'),
-                                                   validation_steps=steps, callbacks=[chkpntr])
+                                                   validation_steps=valsteps, callbacks=[chkpntr])
                 val_loss_sum = tf.Summary(
                     value=[tf.Summary.Value(tag="val_loss", simple_value=history.history['val_loss'][-1])])
                 writer.add_summary(val_loss_sum, i)
 
             else:
+                steps = len(np.array_split(self.molecules, self.n_mols / self.batch_size))
                 history = self.model.fit_generator(generator=self.generator('train'), steps_per_epoch=steps,
                                                    epochs=1, callbacks=[chkpntr])
 
@@ -139,7 +146,7 @@ class SMILESmodel(object):
                 del valid_mols, valid_sum, novel_sum
             i += 1
 
-    def sample_points(self, n_sample=100, temp=1.0, prime_text="G", maxlen=100):
+    def sample_points(self, n_sample=100, temp=1.0, prime_text="^", maxlen=100):
         valid_mols = []
         print("\n SAMPLING POINTS \n")
         print("----- temp: %.2f -----" % temp)
@@ -151,13 +158,13 @@ class SMILESmodel(object):
                 valid_mols.append(s)
         return valid_mols
 
-    def sample(self, temp=1.0, prime_text="G", maxlen=100):
+    def sample(self, temp=1.0, prime_text="^", maxlen=100):
         generated = str()
         seed_token = []
         for t in list(prime_text):
             generated += t
             seed_token += [self.token_indices[t]]
-        while generated[-1] != 'E' and len(generated) < maxlen:
+        while generated[-1] != '$' and len(generated) < maxlen:
             x_seed = one_hot_encode([seed_token], self.n_chars)
             preds = self.model.predict(x_seed, verbose=0)[0]
             next_char_ind = transform_temp(preds[-1, :], temp)
@@ -177,28 +184,3 @@ class SMILESmodel(object):
         self.indices_token = json.load(open(os.path.join(dirname, "indices_token.json"), 'r'))
         self.token_indices = json.load(open(os.path.join(dirname, "token_indices.json"), 'r'))
         self.n_chars = len(self.indices_token.keys())
-
-
-class SMILESautoencoder(SMILESmodel):
-    def build_model(self, layers=2, neurons=32, dropoutfrac=0.3):
-        # encoder
-        print(len(self.molecules), self.maxlen, self.n_chars)
-        inputs = Input(shape=(self.maxlen, self.n_chars))
-        encoded = LSTM(self.n_chars, unit_forget_bias=True, return_sequences=True)(inputs)
-        encoded = GaussianDropout(dropoutfrac)(encoded)
-        encoded = LSTM(neurons)(encoded)
-        self.encoder = Model(inputs, encoded)
-
-        # decoder
-        decoded = RepeatVector(self.maxlen)(encoded)
-        decoded = LSTM(neurons, unit_forget_bias=True, return_sequences=True)(decoded)
-        decoded = GaussianDropout(dropoutfrac)(decoded)
-        decoded = LSTM(self.n_chars, return_sequences=True)(decoded)
-        decoded = Dense(self.n_chars, activation='softmax')(decoded)
-
-        # autoencoder
-        self.model = Model(inputs, decoded)
-        self.model.compile(optimizer=Adam(lr=self.lr), loss='categorical_crossentropy')
-        print("Model built...")
-
-# TODO: make data for AE right

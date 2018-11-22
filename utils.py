@@ -25,7 +25,7 @@ def is_valid_mol(smiles, return_smiles=False):
     :return: {bool} validity
     """
     try:
-        m = CanonSmiles(smiles.replace('G', '').replace('E', '').strip(), 1)
+        m = CanonSmiles(smiles.replace('^', '').replace('$', '').strip(), 1)
     except:
         m = None
     if return_smiles:
@@ -128,7 +128,7 @@ def generate_Xy(tokens, maxlen, step=1):
     return np.array(inputs), np.array(targets)
 
 
-def tokenize_smiles(text=None, mode='default'):
+def tokenizer(text=None, mode='default'):
     """ function to generate all possible token of a text and put them into two translation dictionaries
 
     :param text: text to tokenize
@@ -150,10 +150,10 @@ def tokenize_smiles(text=None, mode='default'):
                          "44": '\\', "45": ')', "46": 'i', "47": 'K', "48": '/', "49": '{', "50": 'h',
                          "51": 'L', "52": 'n', "53": 'U', "54": '[', "55": '0', "56": 'y', "57": 'e',
                          "58": '3', "59": 'g', "60": 'f', "61": '}', "62": '1', "63": 'd', "64": 'W',
-                         "65": '5', "66": 'S', "67": 'F', "68": ']', "69": 'a', "70": 'm'}
+                         "65": '5', "66": 'S', "67": 'F', "68": ']', "69": 'a', "70": 'm', "71": '^', "72": ' '}
         token_indices = {v: k for k, v in indices_token.items()}
     else:
-        raise NotImplementedError
+        raise NotImplementedError("only 'generate' or 'default' tokenizer options are available!")
     return indices_token, token_indices
 
 
@@ -265,8 +265,8 @@ def compare_mollists(smiles, reference):
     :param reference: {list} reference molecules as SMILES strings to compare to ``smiles``
     :return: {list} unique molecules from ``smiles`` as SMILES strings
     """
-    smiles = [s.replace('G', '').replace('E', '').replace('A', '') for s in smiles]
-    reference = [s.replace('G', '').replace('E', '').replace('A', '') for s in reference]
+    smiles = [s.replace('^', '').replace('$', '').strip() for s in smiles]
+    reference = [s.replace('^', '').replace('$', '').strip() for s in reference]
     mols = set([CanonSmiles(s, 1) for s in smiles if MolFromSmiles(s)])
     refs = set([CanonSmiles(s, 1) for s in reference if MolFromSmiles(s)])
     return [m for m in mols if m not in refs]
