@@ -5,15 +5,16 @@ import tensorflow as tf
 from model import SMILESmodel
 
 flags = tf.app.flags
-flags.DEFINE_string("dataset", "data/drugbank.csv", "dataset file containing smiles strings")
-flags.DEFINE_string("run_name", "test", "run name for log and checkpoint files")
+flags.DEFINE_string("dataset", "data/training.csv", "dataset file containing smiles strings")
+flags.DEFINE_string("run_name", "combined_data", "run name for log and checkpoint files")
 flags.DEFINE_string("tokenizer", "default", "Tokenizer for one-hot encoding: 'default': 71 tokens;"
                                             "'generate': generate new tokenizer from input data")
-flags.DEFINE_float("learning_rate", 0.001, "learning rate")
-flags.DEFINE_integer("batch_size", 128, "batch size")
+flags.DEFINE_float("learning_rate", 0.002, "learning rate")
+flags.DEFINE_integer("batch_size", 512, "batch size")
 flags.DEFINE_integer("sample_after", 1, "sample after how many epochs")
-flags.DEFINE_integer("epochs", 10, "epochs to train")
-flags.DEFINE_integer("augment", 2, "whether different SMILES strings should generated for the same molecule, [1-n]")
+flags.DEFINE_integer("n_sample", 100, "number of molecules to sample per sampling round")
+flags.DEFINE_integer("epochs", 15, "epochs to train")
+flags.DEFINE_integer("augment", 5, "whether different SMILES strings should generated for the same molecule, [1-n]")
 flags.DEFINE_boolean("preprocess", True, "whether to pre-process stereo chemistry/salts etc.")
 flags.DEFINE_integer("stereochemistry", 1, "whether stereo chemistry information should be included [0, 1]")
 flags.DEFINE_boolean("reinforce", True, "whether to add most similar but novel generated mols back to training")
@@ -30,7 +31,7 @@ def main(_):
     model.load_data(preprocess=FLAGS.preprocess, stereochem=FLAGS.stereochemistry, augment=FLAGS.augment)
     model.build_tokenizer(tokenize=FLAGS.tokenizer)
     model.build_model()
-    model.train_model()
+    model.train_model(n_sample=FLAGS.n_sample)
 
 
 if __name__ == '__main__':

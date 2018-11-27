@@ -110,7 +110,7 @@ class SMILESmodel(object):
                 y_train = one_hot_encode(train_next_tokens, self.n_chars)
                 yield x_train, y_train
 
-    def train_model(self, n_sample=25):
+    def train_model(self, n_sample=100):
         print("Training model...")
         lr_scheduler = LearningRateScheduler(self._step_decay)
         writer = tf.summary.FileWriter('./logs/' + self.run_name, graph=sess.graph)
