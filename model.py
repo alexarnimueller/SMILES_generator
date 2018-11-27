@@ -1,21 +1,24 @@
 import json
 import os
-import random
+from multiprocessing import cpu_count
 
 import numpy as np
 import tensorflow as tf
+from cats import cats_descriptor
+from descriptorcalculation import parallel_pairwise_similarities
 from keras import backend as kb
-from keras.callbacks import ModelCheckpoint
+from keras.callbacks import ModelCheckpoint, LearningRateScheduler
 from keras.layers import BatchNormalization, Dense, GaussianDropout, Input, LSTM
 from keras.models import Model, load_model
 from keras.optimizers import Adam
+from rdkit.Chem import MolFromSmiles
 
+from generator import DataGenerator
 from preprocess import preprocess_smiles
 from utils import read_smiles_file, tokenize_molecules, pad_seqs, generate_Xy, one_hot_encode, transform_temp, \
     tokenizer, is_valid_mol, randomize_smileslist, compare_mollists
 
 np.random.seed(42)
-random.seed(42)
 tf.set_random_seed(42)
 sess = tf.Session()
 kb.set_session(sess)
@@ -23,7 +26,7 @@ kb.set_session(sess)
 
 class SMILESmodel(object):
     def __init__(self, batch_size=128, dataset='data/default', num_epochs=25, lr=0.001,
-                 sample_after=0, run_name="default", validation=0.2):
+                 sample_after=1, run_name="default", step=1, reinforce=True, validation=0.2):
         self.lr = lr
         self.dataset = dataset
         self.n_mols = 0
@@ -36,6 +39,8 @@ class SMILESmodel(object):
         self.checkpoint_dir = './checkpoint/' + run_name + "/"
         if not os.path.exists(self.checkpoint_dir):
             os.makedirs(self.checkpoint_dir)
+        self.step = step
+        self.reinforce = reinforce
         self.validation = validation
         self.n_chars = None
         self.molecules = None
@@ -43,6 +48,8 @@ class SMILESmodel(object):
         self.train_mols = None
         self.token_indices = None
         self.indices_token = None
+        self.padded = None
+        self.smiles = None
         self.model = None
         self.maxlen = None
 
@@ -51,20 +58,23 @@ class SMILESmodel(object):
         if preprocess:
             all_mols = preprocess_smiles(all_mols, stereochem)
         self.molecules = all_mols
-        self.maxlen = max([len(m) for m in self.molecules]) + 2
+        self.smiles = all_mols
         del all_mols
         print("%i molecules loaded from %s..." % (len(self.molecules), self.dataset))
-        print("Maximal length: %i" % self.maxlen)
+        self.maxlen = max([len(m) for m in self.molecules]) + 2
+        print("Maximal sequence length: %i" % (self.maxlen - 2))
         if augment > 1:
             print("augmenting SMILES %i-fold..." % augment)
             augmented_mols = randomize_smileslist(self.molecules, num=augment)
             print("%i SMILES strings generated for %i molecules" % (len(augmented_mols), len(self.molecules)))
+            self.smiles = self.molecules
             self.molecules = augmented_mols
             del augmented_mols
-        self.molecules = pad_seqs(["^%s$" % m for m in self.molecules], ' ', given_len=self.maxlen)
+        self.padded = pad_seqs(["^%s$" % m for m in self.molecules], ' ', given_len=self.maxlen)
         self.n_mols = len(self.molecules)
-        self.val_mols, self.train_mols = np.split(np.random.choice(
-            self.molecules, self.n_mols, replace=False), [int(self.validation * self.n_mols)])
+        self.val_mols, self.train_mols = np.split(np.random.choice(range(self.n_mols), self.n_mols, replace=False),
+                                                  [int(self.validation * self.n_mols)])
+        print("Using %i examples for training and %i for valdiation" % (len(self.train_mols), len(self.val_mols)))
 
     def build_tokenizer(self, tokenize='default'):
         self.indices_token, self.token_indices = tokenizer(mode=tokenize)
@@ -82,7 +92,7 @@ class SMILESmodel(object):
         l_out = Dense(self.n_chars, activation='softmax', name="Dense")(l_out)
         self.model = Model(l_in, l_out)
         optimizer = Adam(lr=self.lr)
-        self.model.compile(loss='categorical_crossentropy', optimizer=optimizer)
+        self.model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
 
     def generator(self, train_or_val):
         if train_or_val == 'val':
@@ -100,8 +110,9 @@ class SMILESmodel(object):
                 y_train = one_hot_encode(train_next_tokens, self.n_chars)
                 yield x_train, y_train
 
-    def train_model(self, n_sample=100):
+    def train_model(self, n_sample=25):
         print("Training model...")
+        lr_scheduler = LearningRateScheduler(self._step_decay)
         writer = tf.summary.FileWriter('./logs/' + self.run_name, graph=sess.graph)
         mol_file = open("./generated/" + self.run_name + "_generated.csv", 'a')
         i = 0
@@ -109,19 +120,22 @@ class SMILESmodel(object):
             print("\n------ ITERATION %i ------" % i)
             chkpntr = ModelCheckpoint(filepath=self.checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(i), verbose=1)
             if self.validation:
-                trainsteps = len(np.array_split(self.train_mols, len(self.train_mols) / self.batch_size))
-                valsteps = len(np.array_split(self.val_mols, len(self.val_mols) / self.batch_size))
-                history = self.model.fit_generator(generator=self.generator('train'), steps_per_epoch=trainsteps,
-                                                   epochs=1, validation_data=self.generator('val'),
-                                                   validation_steps=valsteps, callbacks=[chkpntr])
+                generator_train = DataGenerator(self.padded, self.train_mols, self.maxlen - 1, self.token_indices,
+                                                self.step, self.batch_size)
+                generator_val = DataGenerator(self.padded, self.val_mols, self.maxlen - 1, self.token_indices,
+                                              self.step, self.batch_size)
+                history = self.model.fit_generator(generator=generator_train, epochs=1, validation_data=generator_val,
+                                                   use_multiprocessing=True, workers=cpu_count() - 1,
+                                                   callbacks=[chkpntr, lr_scheduler])
                 val_loss_sum = tf.Summary(
                     value=[tf.Summary.Value(tag="val_loss", simple_value=history.history['val_loss'][-1])])
                 writer.add_summary(val_loss_sum, i)
 
             else:
-                steps = len(np.array_split(self.molecules, self.n_mols / self.batch_size))
-                history = self.model.fit_generator(generator=self.generator('train'), steps_per_epoch=steps,
-                                                   epochs=1, callbacks=[chkpntr])
+                generator = DataGenerator(self.padded, range(self.n_mols), self.maxlen - 1, self.token_indices,
+                                          self.step, self.batch_size)
+                history = self.model.fit_generator(generator=generator, epochs=1, use_multiprocessing=True,
+                                                   workers=cpu_count() - 1, callbacks=[chkpntr, lr_scheduler])
 
             loss_sum = tf.Summary(value=[tf.Summary.Value(tag="loss", simple_value=history.history['loss'][-1])])
             writer.add_summary(loss_sum, i)
@@ -130,9 +144,12 @@ class SMILESmodel(object):
                 temp = 1.
                 valid_mols = self.sample_points(n_sample, temp)
                 n_valid = len(valid_mols)
-                print("Comparing novelty...")
-                novel = compare_mollists(valid_mols, np.array(self.molecules))
-                mol_file.write("\n".join(set(valid_mols)))
+                if n_valid:
+                    print("Comparing novelty...")
+                    novel = np.array(compare_mollists(valid_mols, np.array(self.molecules)))
+                    mol_file.write("\n".join(set(valid_mols)))
+                else:
+                    novel = []
 
                 valid_sum = tf.Summary(value=[
                     tf.Summary.Value(tag="valid_molecules_" + str(temp), simple_value=(float(n_valid) / n_sample))])
@@ -143,7 +160,20 @@ class SMILESmodel(object):
                 print("\nValid:\t{}/{}".format(n_valid, n_sample))
                 print("Unique:\t{}".format(len(set(valid_mols))))
                 print("Novel:\t{}\n".format(len(novel)))
-                del valid_mols, valid_sum, novel_sum
+
+                if self.reinforce:
+                    if len(novel) > 3:
+                        print("Calculating similarities of novel generated molecules to SMILES pool...")
+                        fp_novel = cats_descriptor([MolFromSmiles(s) for s in novel])
+                        fp_train = cats_descriptor([MolFromSmiles(s) for s in self.smiles])
+                        sims = parallel_pairwise_similarities(fp_novel, fp_train, metric='euclidean')
+                        top = sims[range(len(novel)), np.argsort(sims, axis=1)[:, 0, 0]].flatten()
+                        # take most similar third of the novel mols and add it to self.padded
+                        print("Adding %i most similar but novel molecules to SMILES pool" % int(len(top) / 3))
+                        add = novel[np.argsort(top)[:int(len(top) / 3)]]
+                        padd_add = pad_seqs(["^%s$" % m for m in add], ' ', given_len=self.maxlen)
+                        for i, j in enumerate(np.random.choice(range(len(self.padded)), len(add), False)):
+                            self.padded[j] = padd_add[i]
             i += 1
 
     def sample_points(self, n_sample=100, temp=1.0, prime_text="^", maxlen=100):
@@ -184,3 +214,6 @@ class SMILESmodel(object):
         self.indices_token = json.load(open(os.path.join(dirname, "indices_token.json"), 'r'))
         self.token_indices = json.load(open(os.path.join(dirname, "token_indices.json"), 'r'))
         self.n_chars = len(self.indices_token.keys())
+
+    def _step_decay(self, epoch):
+        return self.lr * np.power(0.5, np.floor((1 + epoch) / int(self.num_epochs / 4)))

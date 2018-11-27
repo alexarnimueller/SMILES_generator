@@ -15,8 +15,7 @@ flags.DEFINE_string("reference", "data/hits.csv", "the molecules used as input f
 flags.DEFINE_string("name", "ftENGA", "name that will be prepended to the output filenames")
 flags.DEFINE_integer("n", 3, "number of most similar molecules to return per reference molecule")
 flags.DEFINE_string("fingerprint", "CATS", "fingerprint to use for searching similar molecules; available:"
-                                            "MACCS: MACCS keys"
-                                            "FCFP4: radial fingerprint with features and diameter 4")
+                    "MACCS: MACCS keys, FCFP4: radial fingerprint with features and diameter 4")
 
 FLAGS = flags.FLAGS
 
