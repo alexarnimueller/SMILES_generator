@@ -25,8 +25,8 @@ kb.set_session(sess)
 
 
 class SMILESmodel(object):
-    def __init__(self, batch_size=128, dataset='data/default', num_epochs=25, lr=0.001,
-                 sample_after=1, run_name="default", step=1, reinforce=True, validation=0.2):
+    def __init__(self, batch_size=128, dataset='data/default', num_epochs=25, lr=0.001, sample_after=1, temp=1.,
+                 run_name="default", reference=None, step=1, reinforce=True, validation=0.2):
         self.lr = lr
         self.dataset = dataset
         self.n_mols = 0
@@ -39,6 +39,8 @@ class SMILESmodel(object):
         self.checkpoint_dir = './checkpoint/' + run_name + "/"
         if not os.path.exists(self.checkpoint_dir):
             os.makedirs(self.checkpoint_dir)
+        self.temp = temp
+        self.reference = reference
         self.step = step
         self.reinforce = reinforce
         self.validation = validation
@@ -75,12 +77,11 @@ class SMILESmodel(object):
         self.val_mols, self.train_mols = np.split(np.random.choice(range(self.n_mols), self.n_mols, replace=False),
                                                   [int(self.validation * self.n_mols)])
         print("Using %i examples for training and %i for valdiation" % (len(self.train_mols), len(self.val_mols)))
+        self.build_tokenizer()
 
     def build_tokenizer(self, tokenize='default'):
         self.indices_token, self.token_indices = tokenizer(mode=tokenize)
         self.n_chars = len(self.indices_token.keys())
-        json.dump(self.indices_token, open(self.checkpoint_dir + "indices_token.json", 'w'))
-        json.dump(self.token_indices, open(self.checkpoint_dir + "token_indices.json", 'w'))
 
     def build_model(self):
         l_in = Input(shape=(None, self.n_chars), name='Input')
@@ -141,19 +142,18 @@ class SMILESmodel(object):
             writer.add_summary(loss_sum, i)
 
             if (i + 1) % self.sample_after == 0:
-                temp = 1.
-                valid_mols = self.sample_points(n_sample, temp)
+                valid_mols = self.sample_points(n_sample, self.temp)
                 n_valid = len(valid_mols)
                 if n_valid:
                     print("Comparing novelty...")
-                    novel = np.array(compare_mollists(valid_mols, np.array(self.molecules)))
+                    novel = np.array(compare_mollists(valid_mols, np.array(self.smiles)))
                     mol_file.write("\n".join(set(valid_mols)))
                 else:
                     novel = []
 
                 valid_sum = tf.Summary(value=[
-                    tf.Summary.Value(tag="valid_molecules_" + str(temp), simple_value=(float(n_valid) / n_sample))])
-                novel_sum = tf.Summary(value=[tf.Summary.Value(tag="new_molecules_" + str(temp),
+                    tf.Summary.Value(tag="valid", simple_value=(float(n_valid) / n_sample))])
+                novel_sum = tf.Summary(value=[tf.Summary.Value(tag="novel",
                                                                simple_value=(float(len(set(novel))) / n_sample))])
                 writer.add_summary(valid_sum, i)
                 writer.add_summary(novel_sum, i)
@@ -162,18 +162,21 @@ class SMILESmodel(object):
                 print("Novel:\t{}\n".format(len(novel)))
 
                 if self.reinforce:
-                    if len(novel) > 3:
+                    if len(novel) > (n_sample / 5):
                         print("Calculating similarities of novel generated molecules to SMILES pool...")
                         fp_novel = cats_descriptor([MolFromSmiles(s) for s in novel])
-                        fp_train = cats_descriptor([MolFromSmiles(s) for s in self.smiles])
+                        if self.reference:
+                            fp_train = cats_descriptor([MolFromSmiles(self.reference)])
+                        else:
+                            fp_train = cats_descriptor([MolFromSmiles(s) for s in self.smiles])
                         sims = parallel_pairwise_similarities(fp_novel, fp_train, metric='euclidean')
                         top = sims[range(len(novel)), np.argsort(sims, axis=1)[:, 0, 0]].flatten()
                         # take most similar third of the novel mols and add it to self.padded
                         print("Adding %i most similar but novel molecules to SMILES pool" % int(len(top) / 3))
                         add = novel[np.argsort(top)[:int(len(top) / 3)]]
                         padd_add = pad_seqs(["^%s$" % m for m in add], ' ', given_len=self.maxlen)
-                        for i, j in enumerate(np.random.choice(range(len(self.padded)), len(add), False)):
-                            self.padded[j] = padd_add[i]
+                        for q, r in enumerate(np.random.choice(range(len(self.padded)), len(add), False)):
+                            self.padded[r] = padd_add[q]
             i += 1
 
     def sample_points(self, n_sample=100, temp=1.0, prime_text="^", maxlen=100):
@@ -207,13 +210,9 @@ class SMILESmodel(object):
         model_file = checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(epoch)
         print("Loading model from file: " + model_file)
         self.model = load_model(model_file)
-        self.load_token(checkpoint_dir)
-
-    def load_token(self, dirname):
-        print("Loading token sets from %s ..." % dirname)
-        self.indices_token = json.load(open(os.path.join(dirname, "indices_token.json"), 'r'))
-        self.token_indices = json.load(open(os.path.join(dirname, "token_indices.json"), 'r'))
-        self.n_chars = len(self.indices_token.keys())
+        self.build_tokenizer()
 
     def _step_decay(self, epoch):
         return self.lr * np.power(0.5, np.floor((1 + epoch) / int(self.num_epochs / 4)))
+
+# todo: track learning rate in tensor board summary
