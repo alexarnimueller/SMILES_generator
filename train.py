@@ -5,7 +5,7 @@ import tensorflow as tf
 from model import SMILESmodel
 
 flags = tf.app.flags
-flags.DEFINE_string("dataset", "data/training.csv", "dataset file containing smiles strings")
+flags.DEFINE_string("dataset", "data/combined_data.csv", "dataset file containing smiles strings")
 flags.DEFINE_string("run_name", "combined_data", "run name for log and checkpoint files")
 flags.DEFINE_float("learning_rate", 0.002, "learning rate")
 flags.DEFINE_integer("batch_size", 512, "batch size")

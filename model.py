@@ -1,4 +1,3 @@
-import json
 import os
 from multiprocessing import cpu_count
 
@@ -140,6 +139,9 @@ class SMILESmodel(object):
 
             loss_sum = tf.Summary(value=[tf.Summary.Value(tag="loss", simple_value=history.history['loss'][-1])])
             writer.add_summary(loss_sum, i)
+            lr_sum = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=kb.get_value(self.model.optimizer.lr))])
+            writer.add_summary(lr_sum, i)
+            # todo: learning rate scheduler not working?
 
             if (i + 1) % self.sample_after == 0:
                 valid_mols = self.sample_points(n_sample, self.temp)
@@ -147,6 +149,7 @@ class SMILESmodel(object):
                 if n_valid:
                     print("Comparing novelty...")
                     novel = np.array(compare_mollists(valid_mols, np.array(self.smiles)))
+                    mol_file.write("\n----- epoch %i -----\n" % i)
                     mol_file.write("\n".join(set(valid_mols)))
                 else:
                     novel = []

@@ -5,21 +5,21 @@ from model import SMILESmodel
 import tensorflow as tf
 
 flags = tf.app.flags
-flags.DEFINE_string("model_path", "checkpoint/chembl24_augment5/", "model path within checkpoint directory")
-flags.DEFINE_string("output_file", "generated/augment5_sampled_oxazole+.csv", "output file for molecules")
-flags.DEFINE_integer("epoch_to_load", 24, "epoch_to_load")
-flags.DEFINE_integer("num_sample", 100, "number of points to sample from trained model")
+flags.DEFINE_string("model_path", "checkpoint/combined_data/", "model path within checkpoint directory")
+flags.DEFINE_string("output_file", "generated/combined_data_10k_sampled.csv", "output file for molecules")
+flags.DEFINE_integer("epoch_to_load", 14, "epoch_to_load")
+flags.DEFINE_integer("num_sample", 10000, "number of points to sample from trained model")
 flags.DEFINE_float("temp", 1.0, "temperature to sample at")
-flags.DEFINE_string("frag", "Gc1ncoc1c2c(OC)cc(N", "Fragment to grow SMILES from")
+flags.DEFINE_string("frag", "^", "Fragment to grow SMILES from. default: start character '^'")
 FLAGS = flags.FLAGS
 
 
 def main(_):
     print("\n----- Running SMILES LSTM model -----\n")
-    model = SMILESmodel()
+    model = SMILESmodel(dataset=FLAGS.model_path)
     model.load_model_from_file(FLAGS.model_path, FLAGS.epoch_to_load)
-    if FLAGS.frag[0] != 'G':
-        frag = 'G' + FLAGS.frag
+    if FLAGS.frag[0] != '^':
+        frag = '^' + FLAGS.frag
     else:
         frag = FLAGS.frag
     print("Starting character(s): %s" % frag)
