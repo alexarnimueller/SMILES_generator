@@ -14,8 +14,8 @@ from rdkit.Chem import MolFromSmiles
 
 from generator import DataGenerator
 from preprocess import preprocess_smiles
-from utils import read_smiles_file, tokenize_molecules, pad_seqs, generate_Xy, one_hot_encode, transform_temp, \
-    tokenizer, is_valid_mol, randomize_smileslist, compare_mollists
+from utils import read_smiles_file, pad_seqs, one_hot_encode, transform_temp, tokenizer, is_valid_mol, \
+    randomize_smileslist, compare_mollists
 
 np.random.seed(42)
 tf.set_random_seed(42)
@@ -85,30 +85,13 @@ class SMILESmodel(object):
     def build_model(self):
         l_in = Input(shape=(None, self.n_chars), name='Input')
         l_out = LSTM(512, unit_forget_bias=True, return_sequences=True, name='LSTM_1')(l_in)
-        l_out = GaussianDropout(0.3, name='Dropout_1')(l_out)
+        l_out = GaussianDropout(0.4, name='Dropout_1')(l_out)
         l_out = LSTM(256, unit_forget_bias=True, return_sequences=True, name='LSTM_2')(l_out)
         l_out = GaussianDropout(0.2, name='Dropout_2')(l_out)
         l_out = BatchNormalization(name='BatchNorm')(l_out)
         l_out = Dense(self.n_chars, activation='softmax', name="Dense")(l_out)
         self.model = Model(l_in, l_out)
-        optimizer = Adam(lr=self.lr)
-        self.model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-
-    def generator(self, train_or_val):
-        if train_or_val == 'val':
-            for batch in np.array_split(self.val_mols, len(self.val_mols) / self.batch_size):
-                token = tokenize_molecules(np.random.choice(batch, len(batch), replace=False), self.token_indices)
-                val_tokens, val_next_tokens = generate_Xy(token, self.maxlen - 2)
-                x_val = one_hot_encode(val_tokens, self.n_chars)
-                y_val = one_hot_encode(val_next_tokens, self.n_chars)
-                yield x_val, y_val
-        elif train_or_val == 'train':
-            for batch in np.array_split(self.train_mols, len(self.train_mols) / self.batch_size):
-                token = tokenize_molecules(np.random.choice(batch, len(batch), replace=False), self.token_indices)
-                train_tokens, train_next_tokens = generate_Xy(token, self.maxlen - 2)
-                x_train = one_hot_encode(train_tokens, self.n_chars)
-                y_train = one_hot_encode(train_next_tokens, self.n_chars)
-                yield x_train, y_train
+        self.model.compile(loss='categorical_crossentropy', optimizer=Adam(lr=self.lr), metrics=['accuracy'])
 
     def train_model(self, n_sample=100):
         print("Training model...")
@@ -168,9 +151,9 @@ class SMILESmodel(object):
                     if len(novel) > (n_sample / 5):
                         print("Calculating similarities of novel generated molecules to SMILES pool...")
                         fp_novel = cats_descriptor([MolFromSmiles(s) for s in novel])
-                        if self.reference:
+                        if self.reference:  # if a reference mol(s) is given, calculate distance to that one
                             fp_train = cats_descriptor([MolFromSmiles(self.reference)])
-                        else:
+                        else:  # else calculate the distance to all training mols
                             fp_train = cats_descriptor([MolFromSmiles(s) for s in self.smiles])
                         sims = parallel_pairwise_similarities(fp_novel, fp_train, metric='euclidean')
                         top = sims[range(len(novel)), np.argsort(sims, axis=1)[:, 0, 0]].flatten()
@@ -180,7 +163,7 @@ class SMILESmodel(object):
                         padd_add = pad_seqs(["^%s$" % m for m in add], ' ', given_len=self.maxlen)
                         for q, r in enumerate(np.random.choice(range(len(self.padded)), len(add), False)):
                             self.padded[r] = padd_add[q]
-            i += 1
+            i += 1  # next epoch
 
     def sample_points(self, n_sample=100, temp=1.0, prime_text="^", maxlen=100):
         valid_mols = []
