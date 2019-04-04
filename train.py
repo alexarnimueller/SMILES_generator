@@ -15,7 +15,7 @@ flags.DEFINE_integer("epochs", 15, "epochs to train")
 flags.DEFINE_integer("augment", 5, "whether different SMILES strings should generated for the same molecule, [1-n]")
 flags.DEFINE_boolean("preprocess", True, "whether to pre-process stereo chemistry/salts etc.")
 flags.DEFINE_integer("stereochemistry", 1, "whether stereo chemistry information should be included [0, 1]")
-flags.DEFINE_boolean("reinforce", True, "whether to add most similar but novel generated mols back to training")
+flags.DEFINE_boolean("reinforce", False, "whether to add most similar but novel generated mols back to training")
 flags.DEFINE_string("reference", None, "a molecule to compare the generated ones to and pick similar ones to reinforce")
 flags.DEFINE_float("validation", 0.2, "fraction of the data to use as a validation set")
 

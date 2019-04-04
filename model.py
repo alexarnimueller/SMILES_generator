@@ -95,11 +95,11 @@ class SMILESmodel(object):
 
     def train_model(self, n_sample=100):
         print("Training model...")
-        lr_scheduler = LearningRateScheduler(self._step_decay)
+        lr_scheduler = LearningRateScheduler(self.step_decay, verbose=1)
         writer = tf.summary.FileWriter('./logs/' + self.run_name, graph=sess.graph)
         mol_file = open("./generated/" + self.run_name + "_generated.csv", 'a')
-        i = 0
-        while i < self.num_epochs:
+        i = 1
+        while i < self.num_epochs + 1:
             print("\n------ ITERATION %i ------" % i)
             chkpntr = ModelCheckpoint(filepath=self.checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(i), verbose=1)
             if self.validation:
@@ -107,8 +107,8 @@ class SMILESmodel(object):
                                                 self.step, self.batch_size)
                 generator_val = DataGenerator(self.padded, self.val_mols, self.maxlen - 1, self.token_indices,
                                               self.step, self.batch_size)
-                history = self.model.fit_generator(generator=generator_train, epochs=1, validation_data=generator_val,
-                                                   use_multiprocessing=True, workers=cpu_count() - 1,
+                history = self.model.fit_generator(generator=generator_train, epochs=i, validation_data=generator_val,
+                                                   use_multiprocessing=True, workers=cpu_count() - 1, initial_epoch=i-1,
                                                    callbacks=[chkpntr, lr_scheduler])
                 val_loss_sum = tf.Summary(
                     value=[tf.Summary.Value(tag="val_loss", simple_value=history.history['val_loss'][-1])])
@@ -117,14 +117,14 @@ class SMILESmodel(object):
             else:
                 generator = DataGenerator(self.padded, range(self.n_mols), self.maxlen - 1, self.token_indices,
                                           self.step, self.batch_size)
-                history = self.model.fit_generator(generator=generator, epochs=1, use_multiprocessing=True,
-                                                   workers=cpu_count() - 1, callbacks=[chkpntr, lr_scheduler])
+                history = self.model.fit_generator(generator=generator, epochs=i, use_multiprocessing=True,
+                                                   workers=cpu_count() - 1, initial_epoch=i-1,
+                                                   callbacks=[chkpntr, lr_scheduler])
 
             loss_sum = tf.Summary(value=[tf.Summary.Value(tag="loss", simple_value=history.history['loss'][-1])])
             writer.add_summary(loss_sum, i)
             lr_sum = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=kb.get_value(self.model.optimizer.lr))])
             writer.add_summary(lr_sum, i)
-            # todo: learning rate scheduler not working?
 
             if (i + 1) % self.sample_after == 0:
                 valid_mols = self.sample_points(n_sample, self.temp)
@@ -139,8 +139,8 @@ class SMILESmodel(object):
 
                 valid_sum = tf.Summary(value=[
                     tf.Summary.Value(tag="valid", simple_value=(float(n_valid) / n_sample))])
-                novel_sum = tf.Summary(value=[tf.Summary.Value(tag="novel",
-                                                               simple_value=(float(len(set(novel))) / n_sample))])
+                novel_sum = tf.Summary(value=[tf.Summary.Value(tag="novel (of valid)",
+                                                               simple_value=(float(len(set(novel))) / n_valid))])
                 writer.add_summary(valid_sum, i)
                 writer.add_summary(novel_sum, i)
                 print("\nValid:\t{}/{}".format(n_valid, n_sample))
@@ -158,11 +158,12 @@ class SMILESmodel(object):
                         sims = parallel_pairwise_similarities(fp_novel, fp_train, metric='euclidean')
                         top = sims[range(len(novel)), np.argsort(sims, axis=1)[:, 0, 0]].flatten()
                         # take most similar third of the novel mols and add it to self.padded
-                        print("Adding %i most similar but novel molecules to SMILES pool" % int(len(top) / 3))
-                        add = novel[np.argsort(top)[:int(len(top) / 3)]]
+                        print("Adding %i most similar but novel molecules to SMILES pool" % (len(top) / 3))
+                        add = novel[np.argsort(top)[:int((len(top) / 3))]]
                         padd_add = pad_seqs(["^%s$" % m for m in add], ' ', given_len=self.maxlen)
-                        for q, r in enumerate(np.random.choice(range(len(self.padded)), len(add), False)):
-                            self.padded[r] = padd_add[q]
+                        self.padded = np.hstack((self.padded, padd_add))
+                        self.padded = np.random.choice(self.padded, len(self.padded), False)
+
             i += 1  # next epoch
 
     def sample_points(self, n_sample=100, temp=1.0, prime_text="^", maxlen=100):
@@ -198,7 +199,5 @@ class SMILESmodel(object):
         self.model = load_model(model_file)
         self.build_tokenizer()
 
-    def _step_decay(self, epoch):
-        return self.lr * np.power(0.5, np.floor((1 + epoch) / int(self.num_epochs / 4)))
-
-# todo: track learning rate in tensor board summary
+    def step_decay(self, epoch):
+        return self.lr * np.power(0.5, np.floor((epoch+1) / (self.num_epochs / 5)))

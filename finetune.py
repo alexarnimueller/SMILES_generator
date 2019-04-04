@@ -8,10 +8,10 @@ from model import SMILESmodel
 flags = tf.app.flags
 flags.DEFINE_string("model_path", "checkpoint/combined_data/", "path (folder) of the pretrained model")
 flags.DEFINE_string("dataset", "data/hits.csv", "[REQUIRED] dataset for fine tuning")
-flags.DEFINE_string("runname", "combined_hits_ft_frozen", "run_name for output files")
-flags.DEFINE_float("lr", 0.0005, "learning rate")
+flags.DEFINE_string("runname", "combined_hits_ft_frozen2", "run_name for output files")
+flags.DEFINE_float("lr", 0.01, "learning rate")
 flags.DEFINE_integer("epoch_to_load", 14, "epoch_to_load")
-flags.DEFINE_integer("epochs_to_train", 10, "number of epochs to fine tune")
+flags.DEFINE_integer("epochs_to_train", 20, "number of epochs to fine tune")
 flags.DEFINE_integer("n_sample", 10, "number of points to sample during and after training")
 flags.DEFINE_float("temp", 1.0, "temperature to sample at")
 flags.DEFINE_integer("sample_after", 1, "sample after how many epochs (if 0, no sampling)")
@@ -19,7 +19,7 @@ flags.DEFINE_integer("augment", 10, "whether different SMILES strings should gen
 flags.DEFINE_integer("batch_size", 16, "batchsize used for finetuning")
 flags.DEFINE_boolean("preprocess", False, "whether to preprocess stereochemistry/salts etc.")
 flags.DEFINE_integer("stereochemistry", 1, "whether stereochemistry information should be included [0, 1]")
-flags.DEFINE_boolean("reinforce", False, "whether to add most similar but novel generated mols back to training")
+flags.DEFINE_boolean("reinforce", True, "whether to add most similar but novel generated mols back to training")
 flags.DEFINE_float("validation", 0., "Fraction of the data to use as a validation set")
 
 FLAGS = flags.FLAGS
@@ -40,8 +40,7 @@ def main(_):
                         sample_after=FLAGS.sample_after, lr=FLAGS.lr)
     model.load_data(preprocess=FLAGS.preprocess, stereochem=FLAGS.stereochemistry, augment=FLAGS.augment)
     model.load_model_from_file(checkpoint_dir=FLAGS.model_path, epoch=FLAGS.epoch_to_load)
-    # freeze first LSTM layer
-    model.model.layers[1].trainable = False
+    model.model.layers[1].trainable = False  # freeze first LSTM layer
     model.model.compile(loss='categorical_crossentropy', optimizer=model.model.optimizer, metrics=['accuracy'])
 
     print("Pre-trained model loaded, finetuning...")
