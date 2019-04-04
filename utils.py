@@ -258,17 +258,22 @@ def decorate_scaffold(scaffold, sidechains, num=10):
     return mols
 
 
-def compare_mollists(smiles, reference):
+def compare_mollists(smiles, reference, canonicalize=True):
     """ get the molecules from ``smiles`` that are not in ``reference``
 
     :param smiles: {list} list of SMILES strings to check for known reference in ``reference``
     :param reference: {list} reference molecules as SMILES strings to compare to ``smiles``
+    :param canonicalize: {bool} whether SMILES should be canonicalized before comparison
     :return: {list} unique molecules from ``smiles`` as SMILES strings
     """
     smiles = [s.replace('^', '').replace('$', '').strip() for s in smiles]
     reference = [s.replace('^', '').replace('$', '').strip() for s in reference]
-    mols = set([CanonSmiles(s, 1) for s in smiles if MolFromSmiles(s)])
-    refs = set([CanonSmiles(s, 1) for s in reference if MolFromSmiles(s)])
+    if canonicalize:
+        mols = set([CanonSmiles(s, 1) for s in smiles if MolFromSmiles(s)])
+        refs = set([CanonSmiles(s, 1) for s in reference if MolFromSmiles(s)])
+    else:
+        mols = set(smiles)
+        refs = set(reference)
     return [m for m in mols if m not in refs]
 
 
@@ -296,7 +301,10 @@ def get_most_similar(smiles, referencemol, n=10, desc='FCFP4', similarity='tanim
         raise NotImplementedError('Only FCFP4, MACCS or CATS fingerprints are available!')
 
     sims = parallel_pairwise_similarities(d_lib, d_ref, similarity).flatten()
-    top_n = np.argsort(sims)[-n:][::-1]
+    if desc == 'CATS':
+        top_n = np.argsort(sims)[:n][::-1]
+    else:
+        top_n = np.argsort(sims)[-n:][::-1]
     return np.array(smiles)[top_n].flatten(), sims[top_n].flatten()
 
 

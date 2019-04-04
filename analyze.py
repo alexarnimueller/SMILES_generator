@@ -24,11 +24,15 @@ FLAGS = flags.FLAGS
 if __name__ == "__main__":
     generated = [line.strip() for line in open(FLAGS.generated, 'r')]
     reference = [line.strip() for line in open(FLAGS.reference, 'r')]
-    # novels = compare_mollists(generated, reference)
-    # print("\n%i\tgenerated molecules read" % len(generated))
-    # print("%i\treference molecules read" % len(reference))
-    # print("%i\tof the generated molecules are not in the reference set" % len(novels))
-    print("\ncalculating %s similarities..." % FLAGS.fingerprint)
+    novels = compare_mollists(generated, reference, False)
+    print("\n%i\tgenerated molecules read" % len(generated))
+    print("%i\treference molecules read" % len(reference))
+    print("%i\tof the generated molecules are not in the reference set" % len(novels))
+    print("\nCalculating Fréchet ChEMBLNET Distance...")
+    fcd = FCD_to_ref(generated, reference, n=min([len(generated), len(reference)]))
+    print("\nFréchet ChEMBLNET Distance to reference set:  %.4f" % fcd)
+
+    print("\nCalculating %s similarities..." % FLAGS.fingerprint)
     if FLAGS.fingerprint == 'FCFP4':
         similarity = 'tanimoto'
         generated_fp = numpy_fps([MolFromSmiles(s) for s in generated], r=2, features=True, bits=1024)
@@ -46,7 +50,5 @@ if __name__ == "__main__":
     sims = parallel_pairwise_similarities(generated_fp, reference_fp, similarity)
     sim_hist(sims.reshape(-1, 1), filename='./plots/%s_sim_hist.pdf' % FLAGS.name)
     pca_plot(data=generated_fp, reference=reference_fp, filename='./plots/%s_pca.png' % FLAGS.name)
-    # plot_top_n(smiles=novels, ref_smiles=reference, n=FLAGS.n, fp=FLAGS.fingerprint, sim=similarity,
-    #            filename='./plots/%s_similar_mols.png' % FLAGS.name)
-    fcd = FCD_to_ref(generated, reference, n=min([len(generated), len(reference)]))
-    print("Fréchet ChEMBLNET Distance to reference set:  %.4f" % fcd)
+    plot_top_n(smiles=novels, ref_smiles=reference, n=FLAGS.n, fp=FLAGS.fingerprint, sim=similarity,
+               filename='./plots/%s_similar_mols.png' % FLAGS.name)
