@@ -6,7 +6,7 @@ import tensorflow as tf
 from cats import cats_descriptor
 from descriptorcalculation import parallel_pairwise_similarities
 from keras import backend as kb
-from keras.callbacks import ModelCheckpoint, LearningRateScheduler
+from keras.callbacks import ModelCheckpoint
 from keras.layers import BatchNormalization, Dense, GaussianDropout, Input, LSTM
 from keras.models import Model, load_model
 from keras.optimizers import Adam
@@ -24,7 +24,7 @@ kb.set_session(sess)
 
 
 class SMILESmodel(object):
-    def __init__(self, batch_size=128, dataset='data/default', num_epochs=25, lr=0.001, sample_after=1, temp=1.,
+    def __init__(self, batch_size=128, dataset='data/default', num_epochs=25, lr=0.005, sample_after=1, temp=1.,
                  run_name="default", reference=None, step=1, reinforce=True, validation=0.2):
         self.lr = lr
         self.dataset = dataset
@@ -85,9 +85,9 @@ class SMILESmodel(object):
     def build_model(self):
         l_in = Input(shape=(None, self.n_chars), name='Input')
         l_out = LSTM(512, unit_forget_bias=True, return_sequences=True, name='LSTM_1')(l_in)
-        l_out = GaussianDropout(0.4, name='Dropout_1')(l_out)
+        l_out = GaussianDropout(0.25, name='Dropout_1')(l_out)
         l_out = LSTM(256, unit_forget_bias=True, return_sequences=True, name='LSTM_2')(l_out)
-        l_out = GaussianDropout(0.2, name='Dropout_2')(l_out)
+        l_out = GaussianDropout(0.25, name='Dropout_2')(l_out)
         l_out = BatchNormalization(name='BatchNorm')(l_out)
         l_out = Dense(self.n_chars, activation='softmax', name="Dense")(l_out)
         self.model = Model(l_in, l_out)
@@ -95,21 +95,22 @@ class SMILESmodel(object):
 
     def train_model(self, n_sample=100):
         print("Training model...")
-        lr_scheduler = LearningRateScheduler(self.step_decay, verbose=1)
         writer = tf.summary.FileWriter('./logs/' + self.run_name, graph=sess.graph)
         mol_file = open("./generated/" + self.run_name + "_generated.csv", 'a')
-        i = 1
-        while i < self.num_epochs + 1:
+        i = 0
+        while i < self.num_epochs:
             print("\n------ ITERATION %i ------" % i)
+            self.set_lr(i)
+            print("\nCurrent learning rate: %.5f" % kb.get_value(self.model.optimizer.lr))
             chkpntr = ModelCheckpoint(filepath=self.checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(i), verbose=1)
             if self.validation:
                 generator_train = DataGenerator(self.padded, self.train_mols, self.maxlen - 1, self.token_indices,
                                                 self.step, self.batch_size)
                 generator_val = DataGenerator(self.padded, self.val_mols, self.maxlen - 1, self.token_indices,
                                               self.step, self.batch_size)
-                history = self.model.fit_generator(generator=generator_train, epochs=i, validation_data=generator_val,
-                                                   use_multiprocessing=True, workers=cpu_count() - 1, initial_epoch=i-1,
-                                                   callbacks=[chkpntr, lr_scheduler])
+                history = self.model.fit_generator(generator=generator_train, epochs=1, validation_data=generator_val,
+                                                   use_multiprocessing=True, workers=cpu_count() - 1,
+                                                   callbacks=[chkpntr])
                 val_loss_sum = tf.Summary(
                     value=[tf.Summary.Value(tag="val_loss", simple_value=history.history['val_loss'][-1])])
                 writer.add_summary(val_loss_sum, i)
@@ -117,10 +118,9 @@ class SMILESmodel(object):
             else:
                 generator = DataGenerator(self.padded, range(self.n_mols), self.maxlen - 1, self.token_indices,
                                           self.step, self.batch_size)
-                history = self.model.fit_generator(generator=generator, epochs=i, use_multiprocessing=True,
-                                                   workers=cpu_count() - 1, initial_epoch=i-1,
-                                                   callbacks=[chkpntr, lr_scheduler])
-
+                history = self.model.fit_generator(generator=generator, epochs=1, use_multiprocessing=True,
+                                                   workers=cpu_count() - 1, callbacks=[chkpntr])
+            # write losses to tensorboard log
             loss_sum = tf.Summary(value=[tf.Summary.Value(tag="loss", simple_value=history.history['loss'][-1])])
             writer.add_summary(loss_sum, i)
             lr_sum = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=kb.get_value(self.model.optimizer.lr))])
@@ -131,23 +131,24 @@ class SMILESmodel(object):
                 n_valid = len(valid_mols)
                 if n_valid:
                     print("Comparing novelty...")
-                    novel = np.array(compare_mollists(valid_mols, np.array(self.smiles)))
+                    novel = np.array(compare_mollists(valid_mols, np.array(self.smiles), False))
+                    n_novel = float(len(set(novel))) / n_valid
                     mol_file.write("\n----- epoch %i -----\n" % i)
                     mol_file.write("\n".join(set(valid_mols)))
                 else:
                     novel = []
-
+                    n_novel = 0
+                # write generated compound summary to tensorboard log
                 valid_sum = tf.Summary(value=[
                     tf.Summary.Value(tag="valid", simple_value=(float(n_valid) / n_sample))])
-                novel_sum = tf.Summary(value=[tf.Summary.Value(tag="novel (of valid)",
-                                                               simple_value=(float(len(set(novel))) / n_valid))])
+                novel_sum = tf.Summary(value=[tf.Summary.Value(tag="novel (of valid)", simple_value=n_novel)])
                 writer.add_summary(valid_sum, i)
                 writer.add_summary(novel_sum, i)
                 print("\nValid:\t{}/{}".format(n_valid, n_sample))
                 print("Unique:\t{}".format(len(set(valid_mols))))
                 print("Novel:\t{}\n".format(len(novel)))
 
-                if self.reinforce:
+                if self.reinforce:  # reinforce = add most similar generated compounds to training pool
                     if len(novel) > (n_sample / 5):
                         print("Calculating similarities of novel generated molecules to SMILES pool...")
                         fp_novel = cats_descriptor([MolFromSmiles(s) for s in novel])
@@ -199,5 +200,5 @@ class SMILESmodel(object):
         self.model = load_model(model_file)
         self.build_tokenizer()
 
-    def step_decay(self, epoch):
-        return self.lr * np.power(0.5, np.floor((epoch+1) / (self.num_epochs / 5)))
+    def set_lr(self, epoch):
+        kb.set_value(self.model.optimizer.lr, self.lr * np.power(0.5, np.floor((epoch+1) / 5)))
