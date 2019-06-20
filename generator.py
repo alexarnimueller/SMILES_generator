@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 
+import tensorflow as tf
 import numpy as np
-import keras
 from utils import tokenize_molecules, one_hot_encode
 
 
-class DataGenerator(keras.utils.Sequence):
+class DataGenerator(tf.keras.utils.Sequence):
     """Data generator to generate training and validation examples for the model's fit_generator method"""
     def __init__(self, smiles, ids, window, t2i, step, batch_size, shuffle=True):
         """Initialization"""

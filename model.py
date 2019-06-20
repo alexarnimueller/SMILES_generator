@@ -12,14 +12,12 @@ from preprocess import preprocess_smiles
 from utils import read_smiles_file, pad_seqs, one_hot_encode, transform_temp, tokenizer, is_valid_mol, \
     randomize_smileslist, compare_mollists
 
-np.random.seed(42)
-tf.set_random_seed(42)
-sess = tf.Session()
-
 
 class SMILESmodel(object):
     def __init__(self, batch_size=128, dataset='data/default', num_epochs=25, lr=0.005, sample_after=1, temp=1.,
-                 run_name="default", reference=None, step=1, reinforce=True, validation=0.2):
+                 run_name="default", reference=None, step=1, reinforce=True, validation=0.2, seed=42):
+        np.random.seed(int(seed))
+        tf.set_random_seed(int(seed))
         self.lr = lr
         self.dataset = dataset
         self.n_mols = 0
@@ -164,10 +162,20 @@ class SMILESmodel(object):
 
     def sample_points(self, n_sample=100, temp=1.0, prime_text="^", maxlen=100):
         valid_mols = []
-        print("\n SAMPLING POINTS \n")
-        print("----- temp: %.2f -----" % temp)
+        print("\n\n----- SAMPLING POINTS AT TEMP %.2f -----" % temp)
         for x in range(n_sample):
-            smiles = self.sample(temp, prime_text, maxlen)
+            smiles = str()  # final smiles string will be stored in "generated"
+            seed_token = []
+            for t in list(prime_text):  # prepare seed token
+                smiles += t
+                seed_token += [self.token_indices[t]]
+            while smiles[-1] != '$' and len(smiles) < maxlen:  # start sampling chars until maxlen or $ is reached
+                x_seed = one_hot_encode([seed_token], self.n_chars)
+                preds = self.model.predict(x_seed, verbose=0)[0]
+                next_char_ind = transform_temp(preds[-1, :], temp)
+                next_char = self.indices_token[str(next_char_ind)]
+                smiles += next_char
+                seed_token += [next_char_ind]
             val, s = is_valid_mol(smiles, True)
             if val:
                 print(s)
