@@ -5,8 +5,8 @@ from model import SMILESmodel
 import tensorflow as tf
 
 flags = tf.app.flags
-flags.DEFINE_string("model", "checkpoint/combined_data/", "model path within checkpoint directory")
-flags.DEFINE_string("out", "generated/combined_data_10k_sampled.csv", "output file for molecules")
+flags.DEFINE_string("model", "checkpoint/combined_data_a5_adLR/", "model path within checkpoint directory")
+flags.DEFINE_string("out", "generated/combined_data_a5_adLR_10k_sampled.csv", "output file for molecules")
 flags.DEFINE_integer("epoch", 14, "epoch_to_load")
 flags.DEFINE_integer("num", 10000, "number of points to sample from trained model")
 flags.DEFINE_float("temp", 1.0, "temperature to sample at")

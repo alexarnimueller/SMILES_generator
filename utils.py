@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import progressbar
 import numpy as np
 
 from time import time
@@ -42,9 +41,8 @@ def read_smiles_file(dataset):
     """
     smls = list()
     print("Reading %s..." % dataset)
-    pbar = progressbar.ProgressBar()
     with open(dataset) as f:
-        for line in pbar(f):
+        for line in f:
             smls.append(line.strip())
     return smls
 

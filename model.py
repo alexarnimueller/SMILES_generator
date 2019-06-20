@@ -88,7 +88,7 @@ class SMILESmodel(object):
 
     def train_model(self, n_sample=100):
         print("Training model...")
-        writer = tf.summary.FileWriter('./logs/' + self.run_name, graph=sess.graph)
+        writer = tf.summary.FileWriter('./logs/' + self.run_name, graph=tf.Session().graph)
         mol_file = open("./generated/" + self.run_name + "_generated.csv", 'a')
         i = 0
         while i < self.num_epochs:
@@ -102,7 +102,7 @@ class SMILESmodel(object):
                 generator_val = DataGenerator(self.padded, self.val_mols, self.maxlen - 1, self.token_indices,
                                               self.step, self.batch_size)
                 history = self.model.fit_generator(generator=generator_train, epochs=1, validation_data=generator_val,
-                                                   use_multiprocessing=True, workers=cpu_count() - 1,
+                                                   use_multiprocessing=True, workers=cpu_count() - 2,
                                                    callbacks=[chkpntr])
                 val_loss_sum = tf.Summary(
                     value=[tf.Summary.Value(tag="val_loss", simple_value=history.history['val_loss'][-1])])
@@ -112,7 +112,7 @@ class SMILESmodel(object):
                 generator = DataGenerator(self.padded, range(self.n_mols), self.maxlen - 1, self.token_indices,
                                           self.step, self.batch_size)
                 history = self.model.fit_generator(generator=generator, epochs=1, use_multiprocessing=True,
-                                                   workers=cpu_count() - 1, callbacks=[chkpntr])
+                                                   workers=cpu_count() - 2, callbacks=[chkpntr])
             # write losses to tensorboard log
             loss_sum = tf.Summary(value=[tf.Summary.Value(tag="loss", simple_value=history.history['loss'][-1])])
             writer.add_summary(loss_sum, i)

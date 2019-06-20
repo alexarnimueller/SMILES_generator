@@ -39,7 +39,7 @@ def main(_):
                         reinforce=FLAGS.reinforce, batch_size=FLAGS.batch, validation=FLAGS.val,
                         sample_after=FLAGS.after, lr=FLAGS.lr, seed=FLAGS.seed)
     model.load_data(preprocess=FLAGS.preprocess, stereochem=FLAGS.stereo, augment=FLAGS.augment)
-    model.load_model_from_file(checkpoint_dir=FLAGS.model_path, epoch=FLAGS.epoch)
+    model.load_model_from_file(checkpoint_dir=FLAGS.model, epoch=FLAGS.epoch)
     model.model.layers[1].trainable = False  # freeze first LSTM layer
     model.model.compile(loss='categorical_crossentropy', optimizer=model.model.optimizer, metrics=['accuracy'])
 
