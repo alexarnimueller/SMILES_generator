@@ -5,11 +5,6 @@ import numpy as np
 import tensorflow as tf
 from cats import cats_descriptor
 from descriptorcalculation import parallel_pairwise_similarities
-from keras import backend as kb
-from keras.callbacks import ModelCheckpoint
-from keras.layers import BatchNormalization, Dense, GaussianDropout, Input, LSTM
-from keras.models import Model, load_model
-from keras.optimizers import Adam
 from rdkit.Chem import MolFromSmiles
 
 from generator import DataGenerator
@@ -20,7 +15,6 @@ from utils import read_smiles_file, pad_seqs, one_hot_encode, transform_temp, to
 np.random.seed(42)
 tf.set_random_seed(42)
 sess = tf.Session()
-kb.set_session(sess)
 
 
 class SMILESmodel(object):
@@ -83,15 +77,16 @@ class SMILESmodel(object):
         self.n_chars = len(self.indices_token.keys())
 
     def build_model(self):
-        l_in = Input(shape=(None, self.n_chars), name='Input')
-        l_out = LSTM(512, unit_forget_bias=True, return_sequences=True, name='LSTM_1')(l_in)
-        l_out = GaussianDropout(0.25, name='Dropout_1')(l_out)
-        l_out = LSTM(256, unit_forget_bias=True, return_sequences=True, name='LSTM_2')(l_out)
-        l_out = GaussianDropout(0.25, name='Dropout_2')(l_out)
-        l_out = BatchNormalization(name='BatchNorm')(l_out)
-        l_out = Dense(self.n_chars, activation='softmax', name="Dense")(l_out)
-        self.model = Model(l_in, l_out)
-        self.model.compile(loss='categorical_crossentropy', optimizer=Adam(lr=self.lr), metrics=['accuracy'])
+        l_in = tf.keras.layers.Input(shape=(None, self.n_chars), name='Input')
+        l_out = tf.keras.layers.LSTM(512, unit_forget_bias=True, return_sequences=True, name='LSTM_1')(l_in)
+        l_out = tf.keras.layers.GaussianDropout(0.25, name='Dropout_1')(l_out)
+        l_out = tf.keras.layers.LSTM(256, unit_forget_bias=True, return_sequences=True, name='LSTM_2')(l_out)
+        l_out = tf.keras.layers.GaussianDropout(0.25, name='Dropout_2')(l_out)
+        l_out = tf.keras.layers.BatchNormalization(name='BatchNorm')(l_out)
+        l_out = tf.keras.layers.Dense(self.n_chars, activation='softmax', name="Dense")(l_out)
+        self.model = tf.keras.models.Model(l_in, l_out)
+        self.model.compile(loss='categorical_crossentropy',
+                           optimizer=tf.keras.optimizers.Adam(lr=self.lr), metrics=['accuracy'])
 
     def train_model(self, n_sample=100):
         print("Training model...")
@@ -101,8 +96,8 @@ class SMILESmodel(object):
         while i < self.num_epochs:
             print("\n------ ITERATION %i ------" % i)
             self.set_lr(i)
-            print("\nCurrent learning rate: %.5f" % kb.get_value(self.model.optimizer.lr))
-            chkpntr = ModelCheckpoint(filepath=self.checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(i), verbose=1)
+            print("\nCurrent learning rate: %.5f" % tf.keras.backend.get_value(self.model.optimizer.lr))
+            chkpntr = tf.keras.callbacks.ModelCheckpoint(filepath=self.checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(i), verbose=1)
             if self.validation:
                 generator_train = DataGenerator(self.padded, self.train_mols, self.maxlen - 1, self.token_indices,
                                                 self.step, self.batch_size)
@@ -123,7 +118,7 @@ class SMILESmodel(object):
             # write losses to tensorboard log
             loss_sum = tf.Summary(value=[tf.Summary.Value(tag="loss", simple_value=history.history['loss'][-1])])
             writer.add_summary(loss_sum, i)
-            lr_sum = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=kb.get_value(self.model.optimizer.lr))])
+            lr_sum = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=tf.keras.backend.get_value(self.model.optimizer.lr))])
             writer.add_summary(lr_sum, i)
 
             if (i + 1) % self.sample_after == 0:
@@ -197,8 +192,8 @@ class SMILESmodel(object):
     def load_model_from_file(self, checkpoint_dir, epoch):
         model_file = checkpoint_dir + 'model_epoch_{:02d}.hdf5'.format(epoch)
         print("Loading model from file: " + model_file)
-        self.model = load_model(model_file)
+        self.model = tf.keras.models.load_model(model_file)
         self.build_tokenizer()
 
     def set_lr(self, epoch):
-        kb.set_value(self.model.optimizer.lr, self.lr * np.power(0.5, np.floor((epoch+1) / 5)))
+        tf.keras.backend.set_value(self.model.optimizer.lr, self.lr * np.power(0.5, np.floor((epoch+1) / 5)))
