@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 from cats import cats_descriptor
 from descriptorcalculation import parallel_pairwise_similarities
-from rdkit.Chem import MolFromSmiles
+from rdkit.Chem import MolFromSmiles, Descriptors
 
 from generator import DataGenerator
 from preprocess import preprocess_smiles
@@ -15,9 +15,9 @@ from utils import read_smiles_file, pad_seqs, one_hot_encode, transform_temp, to
 
 class SMILESmodel(object):
     def __init__(self, batch_size=128, dataset='data/default', num_epochs=25, lr=0.005, sample_after=1, temp=1.,
-                 run_name="default", reference=None, step=1, reinforce=True, validation=0.2, seed=42):
+                 run_name="default", reference=None, step=1, reinforce=False, mw_filter=None, workers=1, validation=0.2, seed=42):
         np.random.seed(int(seed))
-        tf.set_random_seed(int(seed))
+        tf.compat.v1.set_random_seed(int(seed))
         self.lr = lr
         self.dataset = dataset
         self.n_mols = 0
@@ -35,6 +35,7 @@ class SMILESmodel(object):
         self.step = step
         self.reinforce = reinforce
         self.validation = validation
+        self.mw_filter = mw_filter
         self.n_chars = None
         self.molecules = None
         self.val_mols = None
@@ -45,6 +46,15 @@ class SMILESmodel(object):
         self.smiles = None
         self.model = None
         self.maxlen = None
+        if workers == -1:
+            self.workers = cpu_count()
+            self.multi = True
+        elif workers == 1:
+            self.workers = 1
+            self.multi = False
+        else:
+            self.workers = workers
+            self.multi = True
 
     def load_data(self, preprocess=False, stereochem=1., augment=1):
         all_mols = read_smiles_file(self.dataset)
@@ -88,7 +98,7 @@ class SMILESmodel(object):
 
     def train_model(self, n_sample=100):
         print("Training model...")
-        writer = tf.summary.FileWriter('./logs/' + self.run_name, graph=tf.Session().graph)
+        writer = tf.compat.v1.summary.FileWriter('./logs/' + self.run_name, graph=tf.Graph())
         mol_file = open("./generated/" + self.run_name + "_generated.csv", 'a')
         i = 0
         while i < self.num_epochs:
@@ -102,7 +112,7 @@ class SMILESmodel(object):
                 generator_val = DataGenerator(self.padded, self.val_mols, self.maxlen - 1, self.token_indices,
                                               self.step, self.batch_size)
                 history = self.model.fit_generator(generator=generator_train, epochs=1, validation_data=generator_val,
-                                                   use_multiprocessing=True, workers=cpu_count() - 2,
+                                                   use_multiprocessing=self.multi, workers=self.workers,
                                                    callbacks=[chkpntr])
                 val_loss_sum = tf.Summary(
                     value=[tf.Summary.Value(tag="val_loss", simple_value=history.history['val_loss'][-1])])
@@ -111,8 +121,8 @@ class SMILESmodel(object):
             else:
                 generator = DataGenerator(self.padded, range(self.n_mols), self.maxlen - 1, self.token_indices,
                                           self.step, self.batch_size)
-                history = self.model.fit_generator(generator=generator, epochs=1, use_multiprocessing=True,
-                                                   workers=cpu_count() - 2, callbacks=[chkpntr])
+                history = self.model.fit_generator(generator=generator, epochs=1, use_multiprocessing=self.multi,
+                                                   workers=self.workers, callbacks=[chkpntr])
             # write losses to tensorboard log
             loss_sum = tf.Summary(value=[tf.Summary.Value(tag="loss", simple_value=history.history['loss'][-1])])
             writer.add_summary(loss_sum, i)
@@ -143,7 +153,13 @@ class SMILESmodel(object):
 
                 if self.reinforce:  # reinforce = add most similar generated compounds to training pool
                     if len(novel) > (n_sample / 5):
-                        print("Calculating similarities of novel generated molecules to SMILES pool...")
+                        if self.mw_filter:
+                            # only consider molecules in given MW range
+                            mw = np.array([Descriptors.MolWt(MolFromSmiles(s)) if MolFromSmiles(s) else 0 for s in novel])
+                            mw_idx = np.where((int(self.mw_filter[0]) < mw) & (mw < int(self.mw_filter[1])))[0]
+                            novel = np.array(novel)[mw_idx]
+
+                        print("Calculating CATS similarities of novel generated molecules to SMILES pool...")
                         fp_novel = cats_descriptor([MolFromSmiles(s) for s in novel])
                         if self.reference:  # if a reference mol(s) is given, calculate distance to that one
                             fp_train = cats_descriptor([MolFromSmiles(self.reference)])
@@ -152,11 +168,11 @@ class SMILESmodel(object):
                         sims = parallel_pairwise_similarities(fp_novel, fp_train, metric='euclidean')
                         top = sims[range(len(novel)), np.argsort(sims, axis=1)[:, 0, 0]].flatten()
                         # take most similar third of the novel mols and add it to self.padded
-                        print("Adding %i most similar but novel molecules to SMILES pool" % (len(top) / 3))
-                        add = novel[np.argsort(top)[:int((len(top) / 3))]]
+                        print("Adding top 3 most similar but novel molecules to SMILES pool")
+                        add = randomize_smileslist(novel[np.argsort(top)[:3]], num=3)
                         padd_add = pad_seqs(["^%s$" % m for m in add], ' ', given_len=self.maxlen)
                         self.padded = np.hstack((self.padded, padd_add))
-                        self.padded = np.random.choice(self.padded, len(self.padded), False)
+                        self.padded = np.random.choice(self.padded, len(self.padded), False)  # shuffle
 
             i += 1  # next epoch
 

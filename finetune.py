@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from model import SMILESmodel
 
-flags = tf.app.flags
+flags = tf.compat.v1.app.flags
 flags.DEFINE_string("model", "checkpoint/combined_data_a5_adLR/", "path (folder) of the pretrained model")
 flags.DEFINE_string("dataset", "data/hits.csv", "[REQUIRED] dataset for fine tuning")
 flags.DEFINE_string("name", "combined_a5LR_hits_ft", "run_name for output files")
@@ -19,9 +19,12 @@ flags.DEFINE_integer("augment", 10, "whether different SMILES strings should gen
 flags.DEFINE_integer("batch", 32, "batchsize used for finetuning")
 flags.DEFINE_boolean("preprocess", False, "whether to preprocess stereochemistry/salts etc.")
 flags.DEFINE_integer("stereo", 1, "whether stereochemistry information should be included [0, 1]")
-flags.DEFINE_boolean("reinforce", True, "whether to add most similar but novel generated mols back to training")
+flags.DEFINE_boolean("reinforce", False, "whether to add most similar but novel generated mols back to training")
+flags.DEFINE_string("mw_filter", "250,400", "allowed thresholds for reinforcing molecules")
+flags.DEFINE_string("reference", "", "reference molecule to compare to for reinforcement")
 flags.DEFINE_float("val", 0., "Fraction of the data to use as a validation set")
 flags.DEFINE_float("seed", 42, "random seed to use")
+flags.DEFINE_integer("workers", 1, "number of threads to use for the data generator")
 FLAGS = flags.FLAGS
 
 
@@ -36,8 +39,9 @@ def main(_):
         run = FLAGS.name
 
     model = SMILESmodel(dataset=FLAGS.dataset, num_epochs=FLAGS.train, run_name=run,
-                        reinforce=FLAGS.reinforce, batch_size=FLAGS.batch, validation=FLAGS.val,
-                        sample_after=FLAGS.after, lr=FLAGS.lr, seed=FLAGS.seed)
+                        reinforce=bool(FLAGS.reinforce), batch_size=FLAGS.batch, validation=FLAGS.val,
+                        mw_filter=FLAGS.mw_filter.split(','), sample_after=FLAGS.after, lr=FLAGS.lr,
+                        reference=FLAGS.reference, workers=FLAGS.workers, seed=FLAGS.seed)
     model.load_data(preprocess=FLAGS.preprocess, stereochem=FLAGS.stereo, augment=FLAGS.augment)
     model.load_model_from_file(checkpoint_dir=FLAGS.model, epoch=FLAGS.epoch)
     model.model.layers[1].trainable = False  # freeze first LSTM layer
@@ -54,4 +58,4 @@ def main(_):
 
 
 if __name__ == '__main__':
-    tf.app.run()
+    tf.compat.v1.app.run()

@@ -4,13 +4,13 @@
 import tensorflow as tf
 from model import SMILESmodel
 
-flags = tf.app.flags
-flags.DEFINE_string("dataset", "data/combined_data.csv", "dataset file containing smiles strings")
-flags.DEFINE_string("name", "combined_data_a5_adLR", "run name for log and checkpoint files")
+flags = tf.compat.v1.app.flags
+flags.DEFINE_string("dataset", "data/all_5-100.csv", "dataset file containing smiles strings")
+flags.DEFINE_string("name", "all5-100_a5_adLR", "run name for log and checkpoint files")
 flags.DEFINE_float("lr", 0.005, "learning rate")
-flags.DEFINE_integer("batch", 256, "batch size")
+flags.DEFINE_integer("batch", 512, "batch size")
 flags.DEFINE_integer("after", 2, "sample after how many epochs")
-flags.DEFINE_integer("sample", 50, "number of molecules to sample per sampling round")
+flags.DEFINE_integer("sample", 33, "number of molecules to sample per sampling round")
 flags.DEFINE_integer("train", 20, "epochs to train")
 flags.DEFINE_integer("augment", 5, "whether different SMILES strings should generated for the same molecule, [1-n]")
 flags.DEFINE_boolean("preprocess", True, "whether to pre-process stereo chemistry/salts etc.")
@@ -33,4 +33,4 @@ def main(_):
 
 
 if __name__ == '__main__':
-    tf.app.run()
+    tf.compat.v1.app.run()

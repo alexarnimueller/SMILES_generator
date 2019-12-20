@@ -4,7 +4,7 @@
 from model import SMILESmodel
 import tensorflow as tf
 
-flags = tf.app.flags
+flags = tf.compat.v1.app.flags
 flags.DEFINE_string("model", "checkpoint/combined_data_a5_adLR/", "model path within checkpoint directory")
 flags.DEFINE_string("out", "generated/combined_data_a5_adLR_10k_sampled.csv", "output file for molecules")
 flags.DEFINE_integer("epoch", 14, "epoch_to_load")
@@ -33,4 +33,4 @@ def main(_):
 
 
 if __name__ == '__main__':
-    tf.app.run()
+    tf.compat.v1.app.run()

@@ -2,7 +2,6 @@
 
 import tensorflow as tf
 import numpy as np
-from progressbar.progressbar import ProgressBar
 from utils import tokenize_molecules, one_hot_encode
 
 
@@ -38,8 +37,7 @@ class DataGenerator(tf.keras.utils.Sequence):
     def generate_xdy(self, indexes):
         """generate sequence input, descriptor input and sequence output for one batch of SMILES"""
         x, d, y = list(), list(), list()
-        pbar = ProgressBar()
-        for idx in pbar(indexes):
+        for idx in indexes:
             s = self.smiles[idx]
             inputs = []
             targets = []
