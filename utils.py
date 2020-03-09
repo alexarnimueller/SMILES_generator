@@ -5,9 +5,7 @@ import numpy as np
 
 from time import time
 from multiprocessing import cpu_count, Process, Queue
-from descriptorcalculation import numpy_maccs, numpy_fps, parallel_pairwise_similarities
-from cats import cats_descriptor
-
+from descriptors import numpy_maccs, numpy_fps, parallel_pairwise_similarities, cats_descriptor
 from rdkit.Chem import CanonSmiles, MolFromSmiles, MolToSmiles, RenumberAtoms, ReplaceSidechains, ReplaceCore
 from rdkit.Chem.Scaffolds import MurckoScaffold
 

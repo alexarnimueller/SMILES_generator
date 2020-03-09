@@ -3,8 +3,7 @@ from multiprocessing import cpu_count
 
 import numpy as np
 import tensorflow as tf
-from cats import cats_descriptor
-from descriptorcalculation import parallel_pairwise_similarities
+from descriptors import parallel_pairwise_similarities, cats_descriptor
 from rdkit.Chem import MolFromSmiles, Descriptors
 
 from generator import DataGenerator

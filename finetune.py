@@ -7,8 +7,8 @@ from model import SMILESmodel
 
 flags = tf.compat.v1.app.flags
 flags.DEFINE_string("model", "checkpoint/combined_data_a5_adLR/", "path (folder) of the pretrained model")
-flags.DEFINE_string("dataset", "data/hits.csv", "[REQUIRED] dataset for fine tuning")
-flags.DEFINE_string("name", "combined_a5LR_hits_ft", "run_name for output files")
+flags.DEFINE_string("dataset", "data/actives.csv", "[REQUIRED] dataset for fine tuning")
+flags.DEFINE_string("name", "combined_a5LR_hits_ft_actives", "run_name for output files")
 flags.DEFINE_float("lr", 0.005, "learning rate")
 flags.DEFINE_integer("epoch", 19, "epoch_to_load")
 flags.DEFINE_integer("train", 20, "number of epochs to fine tune")
@@ -16,7 +16,7 @@ flags.DEFINE_integer("sample", 100, "number of points to sample during and after
 flags.DEFINE_float("temp", 1.0, "temperature to sample at")
 flags.DEFINE_integer("after", 1, "sample after how many epochs (if 0, no sampling)")
 flags.DEFINE_integer("augment", 10, "whether different SMILES strings should generated for the same molecule, [1-n]")
-flags.DEFINE_integer("batch", 32, "batchsize used for finetuning")
+flags.DEFINE_integer("batch", 16, "batchsize used for finetuning")
 flags.DEFINE_boolean("preprocess", False, "whether to preprocess stereochemistry/salts etc.")
 flags.DEFINE_integer("stereo", 1, "whether stereochemistry information should be included [0, 1]")
 flags.DEFINE_boolean("reinforce", False, "whether to add most similar but novel generated mols back to training")
