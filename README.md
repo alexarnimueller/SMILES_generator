@@ -49,3 +49,10 @@ Finetuning (_aka transfer learning_) a trained model towards molecules of intere
 Analyzing sampled SMILES strings: `python analyze.py`
 #### Example:
 `python analyze.py --generated generated/test_sampled.csv --reference data/test.csv --name test --n 3 --fingerprint ECFP4`
+
+## References
+Publications employing similar techniques:
+
+- Gupta, A., Müller, A. T., Huisman, B. J. H., Fuchs, J. A., Schneider, P. and Schneider, G. (2018) Generative recurrent networks for de novo drug design. Mol. Inf. 37, 1700111.
+- Merk, D., Grisoni, F., Friedrich, L. and Schneider, G. (2018) Tuning artificial intelligence on the de novo design of natural-product-inspired retinoid X receptor modulators. Communications Chemistry 1, 68.
+- Merk, D., Friedrich, L., Grisoni, F. and Schneider, G. (2018) De novo design of bioactive small molecules by artificial intelligence. Mol. Inf. 37, 1700153
