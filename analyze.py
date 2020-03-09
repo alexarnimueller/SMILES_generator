@@ -16,8 +16,8 @@ flags.DEFINE_string("generated", "generated/combined_data_10k_sampled.csv", "the
 flags.DEFINE_string("reference", "data/combined_data.csv", "the molecules used as input for finetuning")
 flags.DEFINE_string("name", "ftENGA", "name that will be prepended to the output filenames")
 flags.DEFINE_integer("n", 3, "number of most similar molecules to return per reference molecule")
-flags.DEFINE_string("fingerprint", "FCFP4", "fingerprint to use for searching similar molecules; available:"
-                    "MACCS: MACCS keys, FCFP4: radial fingerprint with features and diameter 4; CATS: pharmacophores")
+flags.DEFINE_string("fingerprint", "ECFP4", "fingerprint to use for searching similar molecules; available:"
+                    "MACCS: MACCS keys, ECFP4: radial fingerprint with diameter 4; CATS: pharmacophore atompair FP")
 
 FLAGS = flags.FLAGS
 
@@ -33,10 +33,10 @@ if __name__ == "__main__":
     print("\nFréchet ChEMBLNET Distance to reference set:  %.4f" % fcd)
 
     print("\nCalculating %s similarities..." % FLAGS.fingerprint)
-    if FLAGS.fingerprint == 'FCFP4':
+    if FLAGS.fingerprint == 'ECFP4':
         similarity = 'tanimoto'
-        generated_fp = numpy_fps([MolFromSmiles(s) for s in generated], r=2, features=True, bits=1024)
-        reference_fp = numpy_fps([MolFromSmiles(s) for s in reference], r=2, features=True, bits=1024)
+        generated_fp = numpy_fps([MolFromSmiles(s) for s in generated], r=2, features=False, bits=1024)
+        reference_fp = numpy_fps([MolFromSmiles(s) for s in reference], r=2, features=False, bits=1024)
     elif FLAGS.fingerprint == 'MACCS':
         similarity = 'tanimoto'
         generated_fp = numpy_maccs([MolFromSmiles(s) for s in generated])
@@ -46,7 +46,7 @@ if __name__ == "__main__":
         generated_fp = cats_descriptor([MolFromSmiles(s) for s in generated])
         reference_fp = cats_descriptor([MolFromSmiles(s) for s in reference])
     else:
-        raise NotImplementedError('Only "MACCS" or "FCFP4" are available as fingerprints!')
+        raise NotImplementedError('Only "MACCS", "CATS" or "ECFP4" are available as fingerprints!')
     sims = parallel_pairwise_similarities(generated_fp, reference_fp, similarity)
     sim_hist(sims.reshape(-1, 1), filename='./plots/%s_sim_hist.pdf' % FLAGS.name)
     pca_plot(data=generated_fp, reference=reference_fp, filename='./plots/%s_pca.png' % FLAGS.name)
