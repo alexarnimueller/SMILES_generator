@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import tensorflow as tf
+from argparse import ArgumentParser
 from cats import cats_descriptor
 from descriptorcalculation import numpy_maccs, numpy_fps, parallel_pairwise_similarities
 from rdkit.Chem import MolFromSmiles
@@ -11,19 +12,10 @@ from utils import compare_mollists
 
 from FCD import FCD_to_ref
 
-flags = tf.app.flags
-flags.DEFINE_string("generated", "generated/combined_data_10k_sampled.csv", "the sampled molecules after finetuning")
-flags.DEFINE_string("reference", "data/combined_data.csv", "the molecules used as input for finetuning")
-flags.DEFINE_string("name", "ftENGA", "name that will be prepended to the output filenames")
-flags.DEFINE_integer("n", 3, "number of most similar molecules to return per reference molecule")
-flags.DEFINE_string("fingerprint", "ECFP4", "fingerprint to use for searching similar molecules; available:"
-                    "MACCS: MACCS keys, ECFP4: radial fingerprint with diameter 4; CATS: pharmacophore atompair FP")
 
-FLAGS = flags.FLAGS
-
-if __name__ == "__main__":
-    generated = [line.strip() for line in open(FLAGS.generated, 'r')]
-    reference = [line.strip() for line in open(FLAGS.reference, 'r')]
+def main(flags):
+    generated = [line.strip() for line in open(flags.generated, 'r')]
+    reference = [line.strip() for line in open(flags.reference, 'r')]
     novels = compare_mollists(generated, reference, False)
     print("\n%i\tgenerated molecules read" % len(generated))
     print("%i\treference molecules read" % len(reference))
@@ -32,23 +24,42 @@ if __name__ == "__main__":
     fcd = FCD_to_ref(generated, reference, n=min([len(generated), len(reference)]))
     print("\nFréchet ChEMBLNET Distance to reference set:  %.4f" % fcd)
 
-    print("\nCalculating %s similarities..." % FLAGS.fingerprint)
-    if FLAGS.fingerprint == 'ECFP4':
+    print("\nCalculating %s similarities..." % flags.fingerprint)
+    if flags.fingerprint == 'ECFP4':
         similarity = 'tanimoto'
         generated_fp = numpy_fps([MolFromSmiles(s) for s in generated], r=2, features=False, bits=1024)
         reference_fp = numpy_fps([MolFromSmiles(s) for s in reference], r=2, features=False, bits=1024)
-    elif FLAGS.fingerprint == 'MACCS':
+    elif flags.fingerprint == 'MACCS':
         similarity = 'tanimoto'
         generated_fp = numpy_maccs([MolFromSmiles(s) for s in generated])
         reference_fp = numpy_maccs([MolFromSmiles(s) for s in reference])
-    elif FLAGS.fingerprint == 'CATS':
+    elif flags.fingerprint == 'CATS':
         similarity = 'euclidean'
         generated_fp = cats_descriptor([MolFromSmiles(s) for s in generated])
         reference_fp = cats_descriptor([MolFromSmiles(s) for s in reference])
     else:
         raise NotImplementedError('Only "MACCS", "CATS" or "ECFP4" are available as fingerprints!')
     sims = parallel_pairwise_similarities(generated_fp, reference_fp, similarity)
-    sim_hist(sims.reshape(-1, 1), filename='./plots/%s_sim_hist.pdf' % FLAGS.name)
-    pca_plot(data=generated_fp, reference=reference_fp, filename='./plots/%s_pca.png' % FLAGS.name)
-    plot_top_n(smiles=novels, ref_smiles=reference, n=FLAGS.n, fp=FLAGS.fingerprint, sim=similarity,
-               filename='./plots/%s_similar_mols.png' % FLAGS.name)
+    sim_hist(sims.reshape(-1, 1), filename='./plots/%s_sim_hist.pdf' % flags.name)
+    pca_plot(data=generated_fp, reference=reference_fp, filename='./plots/%s_pca.png' % flags.name)
+    plot_top_n(smiles=novels, ref_smiles=reference, n=flags.num, fp=flags.fingerprint, sim=similarity,
+               filename='./plots/%s_similar_mols.png' % flags.name)
+
+
+if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument("--generated", type=str, default="generated/combined_data_10k_sampled.csv",
+                        help="the sampled molecules after finetuning")
+    parser.add_argument("--reference", type=str, default="data/combined_data.csv",
+                        help="the molecules used as input for finetuning")
+    parser.add_argument("--name", type=str, default="analyze_",
+                        help="name that will be prepended to the output filenames")
+    parser.add_argument("--num", type=int, default=3,
+                        help="number of most similar molecules to return per reference molecule")
+    parser.add_argument("--fingerprint", type=str, default="ECFP4",
+                        help="fingerprint to use for searching similar molecules; available: MACCS: MACCS keys, "
+                             "ECFP4: radial fingerprint with diameter 4; CATS: pharmacophore atompair FP")
+    args = parser.parse_args()
+
+    with tf.device('/GPU:0'):
+        main(args)

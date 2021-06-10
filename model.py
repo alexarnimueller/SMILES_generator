@@ -3,8 +3,9 @@ from multiprocessing import cpu_count
 
 import numpy as np
 import tensorflow as tf
+from datetime import datetime
 from descriptors import parallel_pairwise_similarities, cats_descriptor
-from rdkit.Chem import MolFromSmiles, Descriptors
+from rdkit.Chem import MolFromSmiles, Descriptors, MolToInchiKey
 
 from generator import DataGenerator
 from preprocess import preprocess_smiles
@@ -13,10 +14,10 @@ from utils import read_smiles_file, pad_seqs, one_hot_encode, transform_temp, to
 
 
 class SMILESmodel(object):
-    def __init__(self, batch_size=128, dataset='data/default', num_epochs=25, lr=0.005, sample_after=1, temp=1.,
-                 run_name="default", reference=None, step=1, reinforce=False, mw_filter=None, workers=1, validation=0.2, seed=42):
+    def __init__(self, batch_size=128, dataset='data/default', num_epochs=25, lr=0.005, sample_after=1, temp=1., step=1,
+                 run_name="default", reference=None, reinforce=False, mw_filter=None, workers=1, validation=0.2, seed=42):
         np.random.seed(int(seed))
-        tf.compat.v1.set_random_seed(int(seed))
+        tf.random.set_seed(int(seed))
         self.lr = lr
         self.dataset = dataset
         self.n_mols = 0
@@ -43,6 +44,7 @@ class SMILESmodel(object):
         self.indices_token = None
         self.padded = None
         self.smiles = None
+        self.inchi = None
         self.model = None
         self.maxlen = None
         if workers == -1:
@@ -61,6 +63,7 @@ class SMILESmodel(object):
             all_mols = preprocess_smiles(all_mols, stereochem)
         self.molecules = all_mols
         self.smiles = all_mols
+        self.inchi = [MolToInchiKey(MolFromSmiles(s)) for s in all_mols]
         del all_mols
         print("%i molecules loaded from %s..." % (len(self.molecules), self.dataset))
         self.maxlen = max([len(m) for m in self.molecules]) + 2
@@ -97,7 +100,9 @@ class SMILESmodel(object):
 
     def train_model(self, n_sample=100):
         print("Training model...")
-        writer = tf.compat.v1.summary.FileWriter('./logs/' + self.run_name, graph=tf.Graph())
+        log_dir = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        writer = tf.summary.create_file_writer(log_dir)
+        # writer = tf.compat.v1.summary.FileWriter('./logs/' + self.run_name, graph=tf.Graph())
         mol_file = open("./generated/" + self.run_name + "_generated.csv", 'a')
         i = 0
         while i < self.num_epochs:
@@ -110,30 +115,29 @@ class SMILESmodel(object):
                                                 self.step, self.batch_size)
                 generator_val = DataGenerator(self.padded, self.val_mols, self.maxlen - 1, self.token_indices,
                                               self.step, self.batch_size)
-                history = self.model.fit_generator(generator=generator_train, epochs=1, validation_data=generator_val,
-                                                   use_multiprocessing=self.multi, workers=self.workers,
-                                                   callbacks=[chkpntr])
-                val_loss_sum = tf.Summary(
-                    value=[tf.Summary.Value(tag="val_loss", simple_value=history.history['val_loss'][-1])])
-                writer.add_summary(val_loss_sum, i)
+                history = self.model.fit(generator_train, epochs=1, validation_data=generator_val,
+                                         use_multiprocessing=self.multi, workers=self.workers,
+                                         callbacks=[chkpntr])
+                with writer.as_default():
+                    tf.summary.scalar('val_loss', history.history['val_loss'][-1], step=i)
 
             else:
                 generator = DataGenerator(self.padded, range(self.n_mols), self.maxlen - 1, self.token_indices,
                                           self.step, self.batch_size)
-                history = self.model.fit_generator(generator=generator, epochs=1, use_multiprocessing=self.multi,
-                                                   workers=self.workers, callbacks=[chkpntr])
+                history = self.model.fit(generator, epochs=1, use_multiprocessing=self.multi,
+                                         workers=self.workers, callbacks=[chkpntr])
             # write losses to tensorboard log
-            loss_sum = tf.Summary(value=[tf.Summary.Value(tag="loss", simple_value=history.history['loss'][-1])])
-            writer.add_summary(loss_sum, i)
-            lr_sum = tf.Summary(value=[tf.Summary.Value(tag="lr", simple_value=tf.keras.backend.get_value(self.model.optimizer.lr))])
-            writer.add_summary(lr_sum, i)
+            with writer.as_default():
+                tf.summary.scalar('loss', history.history['loss'][-1], step=i)
+                tf.summary.scalar('lr', tf.keras.backend.get_value(self.model.optimizer.lr), step=i)
 
             if (i + 1) % self.sample_after == 0:
                 valid_mols = self.sample_points(n_sample, self.temp)
                 n_valid = len(valid_mols)
                 if n_valid:
                     print("Comparing novelty...")
-                    novel = np.array(compare_mollists(valid_mols, np.array(self.smiles), False))
+                    inchi_valid = np.array([MolToInchiKey(MolFromSmiles(s)) for s in valid_mols])
+                    novel = np.array(compare_mollists(inchi_valid, np.array(self.inchi), False))
                     n_novel = float(len(set(novel))) / n_valid
                     mol_file.write("\n----- epoch %i -----\n" % i)
                     mol_file.write("\n".join(set(valid_mols)))
@@ -141,11 +145,10 @@ class SMILESmodel(object):
                     novel = []
                     n_novel = 0
                 # write generated compound summary to tensorboard log
-                valid_sum = tf.Summary(value=[
-                    tf.Summary.Value(tag="valid", simple_value=(float(n_valid) / n_sample))])
-                novel_sum = tf.Summary(value=[tf.Summary.Value(tag="novel (of valid)", simple_value=n_novel)])
-                writer.add_summary(valid_sum, i)
-                writer.add_summary(novel_sum, i)
+                with writer.as_default():
+                    tf.summary.scalar('valid', (float(n_valid) / n_sample), step=i)
+                    tf.summary.scalar('novel', n_novel, step=i)
+                    tf.summary.scalar('unique_valid', len(set(valid_mols)), step=i)
                 print("\nValid:\t{}/{}".format(n_valid, n_sample))
                 print("Unique:\t{}".format(len(set(valid_mols))))
                 print("Novel:\t{}\n".format(len(novel)))

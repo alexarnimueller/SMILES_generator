@@ -1,36 +1,40 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from model import SMILESmodel
 import tensorflow as tf
-
-flags = tf.compat.v1.app.flags
-flags.DEFINE_string("model", "checkpoint/combined_data_a5_adLR/", "model path within checkpoint directory")
-flags.DEFINE_string("out", "generated/combined_data_a5_adLR_10k_sampled.csv", "output file for molecules")
-flags.DEFINE_integer("epoch", 14, "epoch_to_load")
-flags.DEFINE_integer("num", 10000, "number of points to sample from trained model")
-flags.DEFINE_float("temp", 1.0, "temperature to sample at")
-flags.DEFINE_string("frag", "^", "Fragment to grow SMILES from. default: start character '^'")
-flags.DEFINE_float("seed", 42, "random seed to use")
-FLAGS = flags.FLAGS
+from argparse import ArgumentParser
+from model import SMILESmodel
 
 
-def main(_):
+def main(flags):
     print("\n----- Running SMILES LSTM model -----\n")
-    model = SMILESmodel(dataset=FLAGS.model, seed=FLAGS.seed)
-    model.load_model_from_file(FLAGS.model, FLAGS.epoch)
-    if FLAGS.frag[0] != '^':
-        frag = '^' + FLAGS.frag
+    model = SMILESmodel(dataset=flags.model, seed=flags.seed)
+    model.load_model_from_file(flags.model, flags.epoch)
+    if flags.frag[0] != '^':
+        frag = '^' + flags.frag
     else:
-        frag = FLAGS.frag
+        frag = flags.frag
     print("Starting character(s): %s" % frag)
-    valid_mols = model.sample_points(n_sample=FLAGS.num, temp=FLAGS.temp, prime_text=frag)
-    mol_file = open(FLAGS.out, 'w')
+    valid_mols = model.sample_points(n_sample=flags.num, temp=flags.temp, prime_text=frag)
+    mol_file = open(flags.out, 'w')
     mol_file.write("\n".join(set(valid_mols)))
     mol_file.close()
-    print("Valid:{}/{}".format(len(valid_mols), FLAGS.num))
+    print("Valid:{}/{}".format(len(valid_mols), flags.num))
     print("Unique:{}".format(len(set(valid_mols))))
 
 
 if __name__ == '__main__':
-    tf.compat.v1.app.run()
+    parser = ArgumentParser()
+    parser.add_argument("--model", type=str, default="checkpoint/combined_data_a5_adLR/",
+                        help="model path within checkpoint directory")
+    parser.add_argument("--out", type=str, default="generated/combined_data_a5_adLR_10k_sampled.csv",
+                        help="output file for molecules")
+    parser.add_argument("--epoch", type=int, default=14, help="epoch to load")
+    parser.add_argument("--num", type=int, default=10000, help="number of points to sample from trained model")
+    parser.add_argument("--temp", type=float, default=1.0, help="temperature to sample at")
+    parser.add_argument("--frag", type=str, default="^",
+                        help="Fragment to grow SMILES from. default: start character '^'")
+    parser.add_argument("--seed", type=float, default=42, help="random seed to use")
+    args = parser.parse_args()
+    with tf.device('/GPU:0'):
+        main(args)
