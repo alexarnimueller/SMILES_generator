@@ -61,7 +61,7 @@ if __name__ == '__main__':
                         help="add most similar but novel generated mols back to training")
     parser.add_argument('--num_reinforce', type=int, help="number of generated compounds to add back to training set; "
                                                           "only active if reinforce = True")
-    parser.add_argument("--mw_filter", type=str, default="250,500", help="allowed thresholds for reinforcing molecules")
+    parser.add_argument("--mw_filter", type=str, default="250,400", help="allowed thresholds for reinforcing molecules")
     parser.add_argument("--reference", type=str, default="", help="reference molecule to compare to for reinforcement")
     parser.add_argument("--val", type=float, default=0., help="Fraction of the data to use as a validation set")
     parser.add_argument("--seed", type=float, default=42, help="random seed to use")

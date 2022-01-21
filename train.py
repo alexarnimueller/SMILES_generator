@@ -22,7 +22,7 @@ def main(flags):
 if __name__ == '__main__':
     # arguments
     parser = ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="data/chembl24_10uM_20-100_preproc.csv",
+    parser.add_argument("--dataset", type=str, default="data/chembl24_10uM_20-100.csv",
                         help="dataset file containing smiles strings")
     parser.add_argument("--name", type=str, default="chembl24", help="run name for log and checkpoint files")
     parser.add_argument("--lr", type=float, default=0.005, help="learning rate")
