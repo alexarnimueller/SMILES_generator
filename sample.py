@@ -25,13 +25,13 @@ def main(flags):
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument("--model", type=str, default="checkpoint/combined_data_a5_adLR/",
+    parser.add_argument("--model", type=str, default="checkpoint/chembl24/",
                         help="model path within checkpoint directory")
-    parser.add_argument("--out", type=str, default="generated/combined_data_a5_adLR_10k_sampled.csv",
+    parser.add_argument("--out", type=str, default="generated/chembl24_sampled.csv",
                         help="output file for molecules")
     parser.add_argument("--epoch", type=int, default=14, help="epoch to load")
-    parser.add_argument("--num", type=int, default=10000, help="number of points to sample from trained model")
-    parser.add_argument("--temp", type=float, default=1.0, help="temperature to sample at")
+    parser.add_argument("--num", type=int, default=100, help="number of points to sample from trained model")
+    parser.add_argument("--temp", type=float, default=0.9, help="temperature to sample at")
     parser.add_argument("--frag", type=str, default="^",
                         help="Fragment to grow SMILES from. default: start character '^'")
     parser.add_argument("--seed", type=float, default=42, help="random seed to use")

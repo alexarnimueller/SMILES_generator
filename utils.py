@@ -6,7 +6,7 @@ import numpy as np
 from time import time
 from multiprocessing import cpu_count, Process, Queue
 from descriptors import numpy_maccs, numpy_fps, parallel_pairwise_similarities, cats_descriptor
-from rdkit.Chem import CanonSmiles, MolFromSmiles, MolToSmiles, RenumberAtoms, ReplaceSidechains, ReplaceCore
+from rdkit.Chem import CanonSmiles, MolFromSmiles, MolToSmiles, RenumberAtoms, ReplaceSidechains, ReplaceCore, MolToInchiKey
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 
@@ -23,7 +23,7 @@ def is_valid_mol(smiles, return_smiles=False):
     """
     try:
         m = CanonSmiles(smiles.replace('^', '').replace('$', '').strip(), 1)
-    except:
+    except Exception:
         m = None
     if return_smiles:
         return m is not None, m
@@ -39,7 +39,7 @@ def read_smiles_file(dataset):
     """
     smls = list()
     print("Reading %s..." % dataset)
-    with open(dataset) as f:
+    with open(dataset, "r") as f:
         for line in f:
             smls.append(line.strip())
     return smls
@@ -273,6 +273,17 @@ def compare_mollists(smiles, reference, canonicalize=True):
     return [m for m in mols if m not in refs]
 
 
+def compare_inchikeys(target, reference):
+    """ Compare a list of InChI keys with a list of reference InChI keys and return novel.
+
+    :param target: {list} list of InChI keys of interest
+    :param reference: {list} list of reference InChI keys to compare to
+    :return: {2 lists} novel InChI keys and their indices in the full list
+    """
+    idx = [i for i, k in enumerate(target) if k not in reference]
+    return [target[i] for i in idx], idx
+
+
 def get_most_similar(smiles, referencemol, n=10, desc='FCFP4', similarity='tanimoto'):
     """ get the n most similar molecules in a list of smiles compared to a reference molecule
 
@@ -322,6 +333,27 @@ def randomize_smiles(smiles, num=10, isomeric=True):
     return res
 
 
+def inchikey_from_smileslist(smiles):
+    """Create InChI keys for the given SMILES. - Parallelized
+
+    :param smiles: {list} list of smiles strings
+    """
+    def _one_inchi(smls, q):
+        res = list()
+        for s in smls:
+            res.append(MolToInchiKey(MolFromSmiles(s)))
+        q.put(res)
+
+    queue = Queue()
+    rslt = []
+    for l in np.array_split(np.array(smiles), cpu_count()):
+        p = Process(target=_one_inchi, args=(l, queue))
+        p.start()
+    for _ in range(cpu_count()):
+        rslt.extend(queue.get(timeout=10))
+    return list(rslt)
+
+
 def randomize_smileslist(smiles, num=10, isomeric=True):
     """ Generate different SMILES representations for the same molecule from a list of smiles strings
 
@@ -335,9 +367,9 @@ def randomize_smileslist(smiles, num=10, isomeric=True):
         for s in smls:
             r = list()
             m = MolFromSmiles(s)
-            if m:
+            if m.GetNumAtoms() > 5:
                 start = time()
-                while len(set(r)) < n and (time() - start) < 10:
+                while len(set(r)) < n and (time() - start) < 5:
                     ans = list(range(m.GetNumAtoms()))
                     np.random.shuffle(ans)
                     nm = RenumberAtoms(m, ans)
@@ -351,5 +383,5 @@ def randomize_smileslist(smiles, num=10, isomeric=True):
         p = Process(target=_one_random, args=(l, num, isomeric, queue))
         p.start()
     for _ in range(cpu_count()):
-        rslt.extend(queue.get(10))
+        rslt.extend(queue.get(timeout=10))
     return list(set(rslt))

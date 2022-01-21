@@ -10,7 +10,7 @@ import pandas as pd
 from progressbar import ProgressBar
 from rdkit.Chem import AllChem, MACCSkeys, Descriptors, ChemicalFeatures, Descriptors3D, AddHs
 from rdkit.Chem.Fingerprints.FingerprintMols import FingerprintMol
-from rdkit.Chem.Pharm2D import Generate, SigFactory
+from rdkit.Chem.Pharm2D import Generate
 from rdkit.Chem.Pharm2D.SigFactory import SigFactory
 from rdkit.DataStructs import ConvertToNumpyArray, cDataStructs
 from rdkit.DataStructs import FingerprintSimilarity, TanimotoSimilarity
@@ -341,7 +341,7 @@ def get_cats_factory(features='cats', names=False):
     else:
         fdef = fdef_rdkit
     factory = ChemicalFeatures.BuildFeatureFactoryFromString(fdef)
-    sigfactory = SigFactory.SigFactory(factory, useCounts=True, minPointCount=2, maxPointCount=2)
+    sigfactory = SigFactory(factory, useCounts=True, minPointCount=2, maxPointCount=2)
     sigfactory.SetBins([(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9), (9, 10)])
     sigfactory.Init()
     if names:

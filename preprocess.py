@@ -55,9 +55,8 @@ def preprocess_smiles(smiles, stereochem=1):
         for s in smls:
             try:
                 mols.append(CanonSmiles(s, stereochem))
-            except:
+            except Exception:
                 print("Error! Can not process SMILES string %s" % s)
-                mols.append(None)
         q.put(mols)
 
     print("Preprocessing...")

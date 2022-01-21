@@ -5,17 +5,18 @@ import numpy as np
 import tensorflow as tf
 from datetime import datetime
 from descriptors import parallel_pairwise_similarities, cats_descriptor
-from rdkit.Chem import MolFromSmiles, Descriptors, MolToInchiKey
+from rdkit.Chem import MolFromSmiles, Descriptors
 
 from generator import DataGenerator
 from preprocess import preprocess_smiles
 from utils import read_smiles_file, pad_seqs, one_hot_encode, transform_temp, tokenizer, is_valid_mol, \
-    randomize_smileslist, compare_mollists
+    randomize_smileslist, compare_inchikeys, inchikey_from_smileslist
 
 
 class SMILESmodel(object):
     def __init__(self, batch_size=128, dataset='data/default', num_epochs=25, lr=0.005, sample_after=1, temp=1., step=1,
-                 run_name="default", reference=None, reinforce=False, mw_filter=None, workers=1, validation=0.2, seed=42):
+                 run_name="default", reference=None, reinforce=False, num_reinforce=3, mw_filter=None, workers=1,
+                 validation=0.2, seed=42):
         np.random.seed(int(seed))
         tf.random.set_seed(int(seed))
         self.lr = lr
@@ -34,6 +35,7 @@ class SMILESmodel(object):
         self.reference = reference
         self.step = step
         self.reinforce = reinforce
+        self.num_reinforce = num_reinforce
         self.validation = validation
         self.mw_filter = mw_filter
         self.n_chars = None
@@ -63,13 +65,14 @@ class SMILESmodel(object):
             all_mols = preprocess_smiles(all_mols, stereochem)
         self.molecules = all_mols
         self.smiles = all_mols
-        self.inchi = [MolToInchiKey(MolFromSmiles(s)) for s in all_mols]
-        del all_mols
         print("%i molecules loaded from %s..." % (len(self.molecules), self.dataset))
         self.maxlen = max([len(m) for m in self.molecules]) + 2
         print("Maximal sequence length: %i" % (self.maxlen - 2))
+        print("Creating InChI keys...")
+        self.inchi = inchikey_from_smileslist(all_mols)
+        del all_mols
         if augment > 1:
-            print("augmenting SMILES %i-fold..." % augment)
+            print("Augmenting SMILES %i-fold..." % augment)
             augmented_mols = randomize_smileslist(self.molecules, num=augment)
             print("%i SMILES strings generated for %i molecules" % (len(augmented_mols), len(self.molecules)))
             self.smiles = self.molecules
@@ -96,13 +99,12 @@ class SMILESmodel(object):
         l_out = tf.keras.layers.Dense(self.n_chars, activation='softmax', name="Dense")(l_out)
         self.model = tf.keras.models.Model(l_in, l_out)
         self.model.compile(loss='categorical_crossentropy',
-                           optimizer=tf.keras.optimizers.Adam(lr=self.lr), metrics=['accuracy'])
+                           optimizer=tf.keras.optimizers.Adam(learning_rate=self.lr), metrics=['accuracy'])
 
     def train_model(self, n_sample=100):
         print("Training model...")
         log_dir = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
         writer = tf.summary.create_file_writer(log_dir)
-        # writer = tf.compat.v1.summary.FileWriter('./logs/' + self.run_name, graph=tf.Graph())
         mol_file = open("./generated/" + self.run_name + "_generated.csv", 'a')
         i = 0
         while i < self.num_epochs:
@@ -126,6 +128,7 @@ class SMILESmodel(object):
                                           self.step, self.batch_size)
                 history = self.model.fit(generator, epochs=1, use_multiprocessing=self.multi,
                                          workers=self.workers, callbacks=[chkpntr])
+
             # write losses to tensorboard log
             with writer.as_default():
                 tf.summary.scalar('loss', history.history['loss'][-1], step=i)
@@ -136,9 +139,10 @@ class SMILESmodel(object):
                 n_valid = len(valid_mols)
                 if n_valid:
                     print("Comparing novelty...")
-                    inchi_valid = np.array([MolToInchiKey(MolFromSmiles(s)) for s in valid_mols])
-                    novel = np.array(compare_mollists(inchi_valid, np.array(self.inchi), False))
-                    n_novel = float(len(set(novel))) / n_valid
+                    inchi_valid = inchikey_from_smileslist(valid_mols)
+                    inchi_novel, idx_novel = compare_inchikeys(inchi_valid, self.inchi)
+                    novel = np.array(valid_mols)[idx_novel]
+                    n_novel = float(len(set(inchi_novel))) / n_valid
                     mol_file.write("\n----- epoch %i -----\n" % i)
                     mol_file.write("\n".join(set(valid_mols)))
                 else:
@@ -169,10 +173,10 @@ class SMILESmodel(object):
                             fp_train = cats_descriptor([MolFromSmiles(s) for s in self.smiles])
                         sims = parallel_pairwise_similarities(fp_novel, fp_train, metric='euclidean')
                         top = sims[range(len(novel)), np.argsort(sims, axis=1)[:, 0, 0]].flatten()
-                        # take most similar third of the novel mols and add it to self.padded
-                        print("Adding top 3 most similar but novel molecules to SMILES pool")
-                        add = randomize_smileslist(novel[np.argsort(top)[:3]], num=3)
-                        padd_add = pad_seqs(["^%s$" % m for m in add], ' ', given_len=self.maxlen)
+                        # take most similar part of the novel mols and add it to self.padded
+                        print(f"Adding top {self.num_reinforce} most similar but novel molecules to SMILES pool")
+                        add = randomize_smileslist(novel[np.argsort(top)[:self.num_reinforce]], num=self.num_reinforce)
+                        padd_add = pad_seqs([f"^{m}$" for m in add], ' ', given_len=self.maxlen)
                         self.padded = np.hstack((self.padded, padd_add))
                         self.padded = np.random.choice(self.padded, len(self.padded), False)  # shuffle
 

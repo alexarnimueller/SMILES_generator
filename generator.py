@@ -26,7 +26,10 @@ class DataGenerator(tf.keras.utils.Sequence):
     def __getitem__(self, index):
         """One batch of data"""
         indexes = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
-        return self.generate_xdy([self.ids[k] for k in indexes])
+        return self.generate_xy([self.ids[k] for k in indexes])
+
+    def __call__(self, *args, **kwargs):
+        return self
 
     def on_epoch_end(self):
         """Updates indexes after each epoch"""
@@ -34,13 +37,12 @@ class DataGenerator(tf.keras.utils.Sequence):
         if self.shuffle:
             np.random.shuffle(self.indexes)
 
-    def generate_xdy(self, indexes):
-        """generate sequence input, descriptor input and sequence output for one batch of SMILES"""
-        x, d, y = list(), list(), list()
+    def generate_xy(self, indexes):
+        """generate sequence input and sequence output for one batch of SMILES"""
+        x, y = [], []
         for idx in indexes:
             s = self.smiles[idx]
-            inputs = []
-            targets = []
+            inputs, targets = [], []
             # split up into windows
             for i in range(0, len(s) - self.window, self.step):
                 inputs.append(s[i:i + self.window])
@@ -53,4 +55,4 @@ class DataGenerator(tf.keras.utils.Sequence):
             # one-hot encode tokenized windows
             x.extend(one_hot_encode(input_token, len(self.t2i)).tolist())
             y.extend(one_hot_encode(target_token, len(self.t2i)).tolist())
-        return np.array(x), np.array(y)
+        return tf.convert_to_tensor(x, dtype=tf.float32), tf.convert_to_tensor(y, dtype=tf.float32)
